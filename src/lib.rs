@@ -21,6 +21,7 @@ pub mod api;
 pub mod app;
 pub mod config;
 pub mod domain;
+pub mod healthcheck;
 pub mod infrastructure;
 pub mod server;
 pub mod telemetry;

@@ -39,7 +39,25 @@ Each branch contains:
 
 - Rust (stable, edition 2024) – `rustup` recommended
 - Docker + Docker Compose (from step 014)
-- `curl` or an HTTP client
+- `curl` or an HTTP client (`jq` helps)
+
+## Quick start (final state)
+
+```bash
+cp .env.example .env
+docker compose up -d                          # PostgreSQL, Keycloak, Jaeger, Prometheus
+cargo run                                     # the service on http://localhost:3000
+cargo test                                    # unit, API and database tests
+
+docker compose --profile app up -d --build    # or: everything in containers
+```
+
+| Service | URL | Credentials |
+|---------|-----|-------------|
+| API | http://localhost:3000/api/v1 | `user@booking.local` / `user-password-123`, `admin@booking.local` / `admin-password-123` |
+| Keycloak | http://localhost:8180 | console `admin` / `admin`; realm users `alice` / `alice-password`, `bob` / `bob-password` |
+| Jaeger | http://localhost:16686 | – |
+| Prometheus | http://localhost:9090 | – |
 
 ## Branch index
 

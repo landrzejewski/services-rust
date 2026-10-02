@@ -71,3 +71,13 @@ opt-level = 3
 [dev-dependencies]
 mockall = "0.15.0"
 testcontainers-modules = { version = "0.15.0", features = ["postgres"] }
+
+# Release build used in the container image (step 024).
+[profile.release]
+# Link-time optimization across crates – smaller and faster binary, longer build.
+lto = "thin"
+codegen-units = 1
+# Remove symbols – smaller binary (backtraces still show function names via panic message only).
+strip = "symbols"
+# NOTE: no `panic = "abort"` – `CatchPanicLayer` (step 011) needs unwinding to turn a panic
+# in a handler into a 500 response instead of killing the whole process.

@@ -11,3 +11,9 @@ scrape_configs:
       # reachable as host.docker.internal (Docker Desktop; on Linux see `extra_hosts` in compose).
       # Step 024 adds the containerized app as `app:3000`.
       - targets: ["host.docker.internal:3000"]
+        labels:
+          instance: host
+      # Containerized application (`docker compose --profile app up`).
+      - targets: ["app:3000"]
+        labels:
+          instance: container

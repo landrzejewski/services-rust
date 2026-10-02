@@ -1,0 +1,18 @@
+# Start the full stack first: docker compose --profile app up -d --build
+
+### Liveness (also used by the container HEALTHCHECK via `rust-services healthcheck`)
+GET http://localhost:3000/health/live
+
+### Readiness – database reachable from the container network
+GET http://localhost:3000/health/ready
+
+### Login against the containerized service
+# @name login
+POST http://localhost:3000/api/v1/auth/login
+Content-Type: application/json
+
+{"email": "user@booking.local", "password": "user-password-123"}
+
+###
+GET http://localhost:3000/api/v1/users/me
+Authorization: Bearer {{login.response.body.accessToken}}

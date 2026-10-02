@@ -1,8 +1,46 @@
 # Local infrastructure for development: `docker compose up -d`, stop: `docker compose down`
 # (add `-v` to also remove data volumes).
-# The application itself runs on the host with `cargo run`; it gets containerized in step 024.
+#
+# Development: infrastructure in containers, the application on the host (`cargo run`).
+# Full stack incl. the containerized application (step 024):
+#   docker compose --profile app up -d --build
 
 services:
+  # The application image built from ./Dockerfile (step 024).
+  # `profiles` – started only with `--profile app`, so `docker compose up` for development
+  # doesn't start it (port 3000 stays free for `cargo run`).
+  app:
+    profiles: ["app"]
+    build: .
+    image: room-booking-service:latest
+    ports:
+      - "3000:3000"
+    environment:
+      # Configuration through environment variables (12-factor). Inside the compose network
+      # services are reachable by their names (postgres, keycloak, jaeger).
+      APP_ENVIRONMENT: production
+      DATABASE_URL: postgres://booking:booking@postgres:5432/booking
+      # Secret from the host environment / .env next to compose.yaml; the fallback is for
+      # local demos only. Production: Docker/Kubernetes secrets or a secret manager.
+      APP_AUTH__JWT_SECRET: ${APP_AUTH__JWT_SECRET:-dev-only-secret-change-me-0123456789abcdef}
+      # Tokens say iss=http://localhost:8180/... (KC_HOSTNAME), but from inside the network
+      # Keycloak is reachable as keycloak:8080 – fetch discovery/JWKS via the internal name.
+      APP_OIDC__DISCOVERY_URL: http://keycloak:8080/realms/room-booking/.well-known/openid-configuration
+      APP_TELEMETRY__OTLP_ENDPOINT: http://jaeger:4318
+      RUST_LOG: info,rust_services=debug
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    # Must exceed `server.shutdown_grace_period_secs` (25 s in production.toml): Docker sends
+    # SIGTERM, waits this long, then SIGKILL.
+    stop_grace_period: 30s
+    # The image's HEALTHCHECK (`rust-services healthcheck`) is used automatically.
+    restart: unless-stopped
+
   # PostgreSQL – used from step 014. Credentials match DATABASE_URL in .env.example.
   postgres:
     image: postgres:18-alpine

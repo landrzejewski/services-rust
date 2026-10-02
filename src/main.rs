@@ -7,8 +7,10 @@
 
 // The package name `rust-services` becomes the library crate name `rust_services`
 // (`-` is replaced by `_`). The binary uses it like any external crate.
+use std::process::ExitCode;
+
 use anyhow::Context;
-use rust_services::{config::Settings, server, telemetry};
+use rust_services::{config::Settings, healthcheck, server, telemetry};
 
 // In step 001 we used `#[tokio::main]`. That attribute is only syntactic sugar –
 // it expands to roughly:
@@ -30,7 +32,13 @@ use rust_services::{config::Settings, server, telemetry};
 //
 // `main` may return `Result`: on `Err` the error is printed (with `anyhow`: including the whole
 // context chain) and the process exits with code 1.
-fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<ExitCode> {
+    // `rust-services healthcheck` – used by the Docker HEALTHCHECK (step 024). Runs before
+    // anything else: no config, no logging, no runtime needed.
+    if std::env::args().nth(1).as_deref() == Some("healthcheck") {
+        return Ok(healthcheck::run());
+    }
+
     // Load variables from `.env` into the process environment (if the file exists).
     // Must run before anything reads env variables and before other threads are spawned.
     // Existing environment variables are NOT overwritten – real env (Docker, CI, shell) wins.
@@ -67,5 +75,5 @@ fn main() -> anyhow::Result<()> {
 
     // Flush buffered spans before the process exits, otherwise the last traces are lost.
     telemetry.shutdown();
-    result
+    result.map(|()| ExitCode::SUCCESS)
 }

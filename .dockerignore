@@ -1,0 +1,13 @@
+# Keep the build context small and avoid leaking local files into the image.
+target/
+.git/
+.idea/
+.vscode/
+.env
+*.md
+requests/
+keycloak/
+observability/
+tests/
+Dockerfile
+.dockerignore
