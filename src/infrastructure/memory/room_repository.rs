@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::RwLock};
 use chrono::NaiveTime;
 use uuid::Uuid;
 
-use crate::domain::room::{NewRoom, Room, RoomFilter};
+use crate::domain::room::{NewRoom, OpeningHours, Room, RoomFilter, RoomName};
 
 // Repository – hides *how* data is stored; offers collection-like operations to the domain.
 //
@@ -33,13 +33,14 @@ impl InMemoryRoomRepository {
             ("Conference hall", 40, (7, 22)),
         ];
         for (name, capacity, (opens, closes)) in samples {
+            let hour = |h| NaiveTime::from_hms_opt(h, 0, 0).expect("valid sample hour");
             let room = Room {
                 id: Uuid::now_v7(),
-                name: name.to_string(),
+                name: RoomName::parse(name).expect("valid sample name"),
                 description: None,
                 capacity,
-                opens_at: NaiveTime::from_hms_opt(opens, 0, 0).expect("valid sample hour"),
-                closes_at: NaiveTime::from_hms_opt(closes, 0, 0).expect("valid sample hour"),
+                opening_hours: OpeningHours::new(hour(opens), hour(closes))
+                    .expect("valid sample hours"),
             };
             repository
                 .rooms
@@ -85,8 +86,7 @@ impl InMemoryRoomRepository {
             name: new_room.name,
             description: new_room.description,
             capacity: new_room.capacity,
-            opens_at: new_room.opens_at,
-            closes_at: new_room.closes_at,
+            opening_hours: new_room.opening_hours,
         };
         self.rooms
             .write()
@@ -102,8 +102,7 @@ impl InMemoryRoomRepository {
         room.name = data.name;
         room.description = data.description;
         room.capacity = data.capacity;
-        room.opens_at = data.opens_at;
-        room.closes_at = data.closes_at;
+        room.opening_hours = data.opening_hours;
         Some(room.clone())
     }
 

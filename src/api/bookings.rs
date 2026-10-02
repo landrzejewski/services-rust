@@ -8,7 +8,10 @@ use axum::{
 use uuid::Uuid;
 
 use crate::{
-    api::dto::bookings::{BookingQuery, BookingResponse, CreateBookingRequest},
+    api::{
+        dto::bookings::{BookingQuery, BookingResponse, CreateBookingRequest},
+        extractors::{ValidatedJson, invalid_value},
+    },
     app::AppState,
 };
 
@@ -40,10 +43,14 @@ async fn get_booking(State(state): State<AppState>, Path(id): Path<Uuid>) -> Res
 
 async fn create_booking(
     State(state): State<AppState>,
-    Json(request): Json<CreateBookingRequest>,
+    ValidatedJson(request): ValidatedJson<CreateBookingRequest>,
 ) -> Response {
     let room_id = request.room_id;
-    match state.booking_service.create_booking(request.into()).await {
+    let new_booking = match request.try_into() {
+        Ok(new_booking) => new_booking,
+        Err(error) => return invalid_value(error),
+    };
+    match state.booking_service.create_booking(new_booking).await {
         Some(booking) => (
             StatusCode::CREATED,
             [(header::LOCATION, format!("/api/v1/bookings/{}", booking.id))],

@@ -3,6 +3,8 @@
 use chrono::{DateTime, TimeDelta, Utc};
 use uuid::Uuid;
 
+use crate::domain::time_range::TimeRange;
+
 // `DateTime<Utc>` (chrono) – an instant in time in UTC.
 // Store and compute in UTC; convert to local time zones only for presentation.
 #[derive(Debug, Clone)]
@@ -11,8 +13,8 @@ pub struct Booking {
     pub room_id: Uuid,
     /// Users are not modelled yet – a plain id until authentication (step 018).
     pub user_id: Uuid,
-    pub start_time: DateTime<Utc>,
-    pub end_time: DateTime<Utc>,
+    /// Validated time range (step 009) instead of two loose timestamps.
+    pub period: TimeRange,
     pub attendees: u32,
     pub status: BookingStatus,
     pub created_at: DateTime<Utc>,
@@ -21,7 +23,7 @@ pub struct Booking {
 impl Booking {
     /// Derived value – computed from the state, not stored.
     pub fn duration(&self) -> TimeDelta {
-        self.end_time - self.start_time
+        self.period.duration()
     }
 }
 
@@ -36,8 +38,7 @@ pub enum BookingStatus {
 pub struct NewBooking {
     pub room_id: Uuid,
     pub user_id: Uuid,
-    pub start_time: DateTime<Utc>,
-    pub end_time: DateTime<Utc>,
+    pub period: TimeRange,
     pub attendees: u32,
 }
 

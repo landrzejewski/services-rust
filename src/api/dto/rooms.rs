@@ -1,10 +1,14 @@
 use chrono::NaiveTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use validator::{Validate, ValidationError};
 
 use crate::{
     api::serde_formats::hh_mm,
-    domain::room::{NewRoom, Room, RoomFilter},
+    domain::{
+        room::{NewRoom, OpeningHours, Room, RoomFilter, RoomName},
+        validation::InvalidValue,
+    },
 };
 
 /// Body of `POST /rooms` and `PUT /rooms/{id}`.
@@ -15,12 +19,25 @@ use crate::{
 //
 // `deny_unknown_fields` – a typo like `"capasity"` fails with 422 instead of being silently ignored.
 // Trade-off: clients can't send extra fields, so API evolution must be coordinated.
-#[derive(Debug, Deserialize)]
+//
+// `Validate` (validator crate) generates `request.validate() -> Result<(), ValidationErrors>`
+// from the `#[validate(...)]` attributes. All rules are checked and ALL failures are reported at
+// once – clients get the complete list of problems in one response.
+#[derive(Debug, Deserialize, Validate)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+// Struct-level rule: a function receiving the whole struct, for rules involving several fields.
+// Its errors are reported under the key `__all__`. By default it is skipped when any field rule
+// failed; `skip_on_field_errors = false` runs it anyway, so all problems are reported at once.
+#[validate(schema(function = "validate_opening_hours", skip_on_field_errors = false))]
 pub struct RoomRequest {
+    // `length` counts characters (not bytes). Custom `message` replaces the default error code text.
+    #[validate(length(min = 1, max = 100, message = "must have 1-100 characters"))]
     pub name: String,
     // `Option` fields are optional in JSON: absent or `null` -> `None`.
+    // Rules on `Option<T>` apply only when the value is present.
+    #[validate(length(max = 500, message = "must have at most 500 characters"))]
     pub description: Option<String>,
+    #[validate(range(min = 1, max = 500, message = "must be between 1 and 500"))]
     pub capacity: u32,
     // `with = "module"` – custom (de)serialization for one field (see `api::serde_formats::hh_mm`).
     // `default = "fn"` – value used when the field is absent (plain `default` uses `Default::default()`).
@@ -38,16 +55,29 @@ fn default_closes_at() -> NaiveTime {
     NaiveTime::from_hms_opt(18, 0, 0).expect("valid constant time")
 }
 
-// Request DTO -> domain command. Infallible for now; validation turns it into `TryFrom` (step 009).
-impl From<RoomRequest> for NewRoom {
-    fn from(request: RoomRequest) -> Self {
-        Self {
-            name: request.name,
+fn validate_opening_hours(request: &RoomRequest) -> Result<(), ValidationError> {
+    if request.opens_at >= request.closes_at {
+        // The code ("opening_hours") is machine-readable; the message is for humans.
+        return Err(ValidationError::new("opening_hours")
+            .with_message("opensAt must be before closesAt".into()));
+    }
+    Ok(())
+}
+
+// Request DTO -> domain command. Fallible since step 009: building domain value types
+// (`RoomName`, `OpeningHours`) can fail, so the mapping is `TryFrom` and returns `Result`.
+// After `validate()` passed this should not fail – but the domain does not trust the API layer;
+// it enforces its own invariants (the same domain types may be created from other inputs).
+impl TryFrom<RoomRequest> for NewRoom {
+    type Error = InvalidValue;
+
+    fn try_from(request: RoomRequest) -> Result<Self, Self::Error> {
+        Ok(Self {
+            name: RoomName::parse(&request.name)?,
             description: request.description,
             capacity: request.capacity,
-            opens_at: request.opens_at,
-            closes_at: request.closes_at,
-        }
+            opening_hours: OpeningHours::new(request.opens_at, request.closes_at)?,
+        })
     }
 }
 
@@ -91,11 +121,12 @@ impl From<Room> for RoomResponse {
     fn from(room: Room) -> Self {
         Self {
             id: room.id,
-            name: room.name,
+            // Newtype -> primitive for the wire format.
+            name: room.name.to_string(),
             description: room.description,
             capacity: room.capacity,
-            opens_at: room.opens_at,
-            closes_at: room.closes_at,
+            opens_at: room.opening_hours.opens_at(),
+            closes_at: room.opening_hours.closes_at(),
         }
     }
 }

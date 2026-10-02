@@ -1,15 +1,21 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use validator::{Validate, ValidationError};
 
-use crate::domain::booking::{Booking, BookingFilter, BookingStatus, NewBooking};
+use crate::domain::{
+    booking::{Booking, BookingFilter, BookingStatus, NewBooking},
+    time_range::TimeRange,
+    validation::InvalidValue,
+};
 
 /// Body of `POST /bookings`.
 //
 // `DateTime<Utc>` (de)serializes as an RFC 3339 string, e.g. "2026-10-05T09:00:00Z". On input any
 // offset is accepted ("2026-10-05T11:00:00+02:00") and converted to UTC.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[validate(schema(function = "validate_period", skip_on_field_errors = false))]
 pub struct CreateBookingRequest {
     pub room_id: Uuid,
     pub user_id: Uuid,
@@ -17,6 +23,7 @@ pub struct CreateBookingRequest {
     pub end_time: DateTime<Utc>,
     // `default` – absent field -> `u32::default()`... which is 0. Here we want 1, hence a function.
     #[serde(default = "one")]
+    #[validate(range(min = 1, message = "must be at least 1"))]
     pub attendees: u32,
 }
 
@@ -24,15 +31,25 @@ fn one() -> u32 {
     1
 }
 
-impl From<CreateBookingRequest> for NewBooking {
-    fn from(request: CreateBookingRequest) -> Self {
-        Self {
+fn validate_period(request: &CreateBookingRequest) -> Result<(), ValidationError> {
+    if request.start_time >= request.end_time {
+        return Err(
+            ValidationError::new("period").with_message("startTime must be before endTime".into())
+        );
+    }
+    Ok(())
+}
+
+impl TryFrom<CreateBookingRequest> for NewBooking {
+    type Error = InvalidValue;
+
+    fn try_from(request: CreateBookingRequest) -> Result<Self, Self::Error> {
+        Ok(Self {
             room_id: request.room_id,
             user_id: request.user_id,
-            start_time: request.start_time,
-            end_time: request.end_time,
+            period: TimeRange::new(request.start_time, request.end_time)?,
             attendees: request.attendees,
-        }
+        })
     }
 }
 
@@ -113,8 +130,8 @@ impl From<Booking> for BookingResponse {
             id: booking.id,
             room_id: booking.room_id,
             user_id: booking.user_id,
-            start_time: booking.start_time,
-            end_time: booking.end_time,
+            start_time: booking.period.start(),
+            end_time: booking.period.end(),
             attendees: booking.attendees,
             status: booking.status.into(),
             created_at: booking.created_at,
@@ -135,8 +152,7 @@ mod tests {
             id: Uuid::now_v7(),
             room_id: Uuid::now_v7(),
             user_id: Uuid::now_v7(),
-            start_time: start,
-            end_time: start + chrono::TimeDelta::minutes(90),
+            period: TimeRange::new(start, start + chrono::TimeDelta::minutes(90)).unwrap(),
             attendees: 3,
             status: BookingStatus::Active,
             created_at: start,

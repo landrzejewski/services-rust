@@ -22,8 +22,7 @@ impl InMemoryBookingRepository {
             id: Uuid::now_v7(),
             room_id: new_booking.room_id,
             user_id: new_booking.user_id,
-            start_time: new_booking.start_time,
-            end_time: new_booking.end_time,
+            period: new_booking.period,
             attendees: new_booking.attendees,
             status: BookingStatus::Active,
             created_at: Utc::now(),
@@ -50,7 +49,7 @@ impl InMemoryBookingRepository {
             .filter(|booking| filter.matches(booking))
             .cloned()
             .collect();
-        result.sort_by_key(|booking| booking.start_time);
+        result.sort_by_key(|booking| booking.period.start());
         result
     }
 

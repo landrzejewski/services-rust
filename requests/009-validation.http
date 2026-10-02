@@ -1,0 +1,41 @@
+@base = http://localhost:3000/api/v1
+
+### Several field errors + struct-level rule (__all__) -> 422
+POST {{base}}/rooms
+Content-Type: application/json
+
+{"name": "", "capacity": 0, "opensAt": "18:00", "closesAt": "08:00"}
+
+### Passes DTO rules, rejected by the RoomName domain type (blank after trim) -> 422
+POST {{base}}/rooms
+Content-Type: application/json
+
+{"name": "   ", "capacity": 5}
+
+### Valid – name normalized (trimmed) by RoomName::parse
+POST {{base}}/rooms
+Content-Type: application/json
+
+{"name": "  Yellow room ", "capacity": 5}
+
+### Malformed JSON -> 400 as JSON body
+POST {{base}}/rooms
+Content-Type: application/json
+
+{"name":
+
+### Booking: endTime before startTime, attendees = 0 -> 422
+# @name rooms
+GET {{base}}/rooms?name=blue
+
+###
+POST {{base}}/bookings
+Content-Type: application/json
+
+{
+  "roomId": "{{rooms.response.body.$[0].id}}",
+  "userId": "0199a3f0-0000-7000-8000-000000000007",
+  "startTime": "2026-10-05T10:00:00Z",
+  "endTime": "2026-10-05T09:00:00Z",
+  "attendees": 0
+}

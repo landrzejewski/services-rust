@@ -16,6 +16,7 @@
 
 mod bookings;
 pub mod dto;
+pub mod extractors;
 mod health;
 mod rooms;
 pub mod serde_formats;

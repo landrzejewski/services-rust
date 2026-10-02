@@ -12,6 +12,7 @@ use crate::{
         bookings::BookingResponse,
         rooms::{RoomQuery, RoomRequest, RoomResponse},
     },
+    api::extractors::{ValidatedJson, invalid_value},
     app::AppState,
     domain::booking::BookingFilter,
 };
@@ -59,13 +60,24 @@ async fn get_room(State(state): State<AppState>, Path(id): Path<Uuid>) -> Respon
     }
 }
 
-// `Json<RoomRequest>` as an argument deserializes the request body. It consumes the body,
+// `Json<T>` as an argument deserializes the request body. It consumes the body,
 // so it must be the LAST extractor. Rejections (handler not called):
 // - missing/wrong `Content-Type` (must be `application/json`) -> 415 Unsupported Media Type
 // - malformed JSON                                             -> 400 Bad Request
 // - valid JSON, wrong shape (missing field, wrong type)        -> 422 Unprocessable Entity
-async fn create_room(State(state): State<AppState>, Json(request): Json<RoomRequest>) -> Response {
-    let room = state.room_service.create_room(request.into()).await;
+//
+// `ValidatedJson<T>` (step 009) = `Json<T>` + `T::validate()`; invalid input -> 422 with field errors.
+async fn create_room(
+    State(state): State<AppState>,
+    ValidatedJson(request): ValidatedJson<RoomRequest>,
+) -> Response {
+    // DTO -> domain command; domain invariants are checked here (`TryFrom`).
+    // Explicit `match` for now – step 010 shortens this to `request.try_into()?`.
+    let new_room = match request.try_into() {
+        Ok(new_room) => new_room,
+        Err(error) => return invalid_value(error),
+    };
+    let room = state.room_service.create_room(new_room).await;
 
     // REST convention for creation: 201 Created + `Location` header pointing to the new resource.
     // Headers can be added as an array of (name, value) tuples in the response tuple.
@@ -81,9 +93,13 @@ async fn create_room(State(state): State<AppState>, Json(request): Json<RoomRequ
 async fn update_room(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    Json(request): Json<RoomRequest>,
+    ValidatedJson(request): ValidatedJson<RoomRequest>,
 ) -> Response {
-    match state.room_service.update_room(id, request.into()).await {
+    let data = match request.try_into() {
+        Ok(data) => data,
+        Err(error) => return invalid_value(error),
+    };
+    match state.room_service.update_room(id, data).await {
         Some(room) => Json(RoomResponse::from(room)).into_response(),
         None => room_not_found(id),
     }
