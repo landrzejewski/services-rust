@@ -1,0 +1,71 @@
+{
+  "realm": "room-booking",
+  "enabled": true,
+  "accessTokenLifespan": 900,
+  "roles": {
+    "realm": [
+      { "name": "USER", "description": "Can book rooms" },
+      { "name": "ADMIN", "description": "Manages rooms and all bookings" }
+    ]
+  },
+  "defaultRoles": ["USER"],
+  "clients": [
+    {
+      "clientId": "room-booking-api",
+      "name": "Room Booking API (resource server)",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "room-booking-api-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false
+    },
+    {
+      "clientId": "room-booking-cli",
+      "name": "Room Booking CLI / SPA (public client)",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["http://localhost:5173/*", "http://localhost:8000/*"],
+      "webOrigins": ["http://localhost:5173"],
+      "attributes": { "pkce.code.challenge.method": "S256" },
+      "protocolMappers": [
+        {
+          "name": "audience-room-booking-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "room-booking-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "id": "0199a3f0-0000-7000-8000-0000000000b1",
+      "username": "alice",
+      "email": "alice@keycloak.local",
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "User",
+      "enabled": true,
+      "credentials": [{ "type": "password", "value": "alice-password", "temporary": false }],
+      "realmRoles": ["USER"]
+    },
+    {
+      "id": "0199a3f0-0000-7000-8000-0000000000b2",
+      "username": "bob",
+      "email": "bob@keycloak.local",
+      "emailVerified": true,
+      "firstName": "Bob",
+      "lastName": "Admin",
+      "enabled": true,
+      "credentials": [{ "type": "password", "value": "bob-password", "temporary": false }],
+      "realmRoles": ["USER", "ADMIN"]
+    }
+  ]
+}

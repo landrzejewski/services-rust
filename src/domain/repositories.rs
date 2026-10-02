@@ -19,7 +19,7 @@ use crate::domain::{
     pagination::{Page, PageRequest},
     room::{NewRoom, Room, RoomFilter},
     time_range::TimeRange,
-    user::{Email, NewUser, User},
+    user::{Email, NewUser, Role, User},
 };
 
 /// Storage failure.
@@ -123,6 +123,10 @@ pub trait UserRepository: Send + Sync {
     async fn find_by_email(&self, email: &Email) -> RepositoryResult<Option<User>>;
     /// Fails with `RepositoryError::Conflict` when the e-mail is already registered.
     async fn insert(&self, new_user: NewUser) -> RepositoryResult<User>;
+
+    /// Creates or updates a user managed by an external identity provider (step 020):
+    /// the id comes from the provider (`sub`), there is no local password.
+    async fn upsert_external(&self, id: Uuid, email: &Email, role: Role) -> RepositoryResult<()>;
 }
 
 // ---------------------------------------------------------------------------

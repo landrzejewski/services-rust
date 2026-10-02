@@ -1,0 +1,48 @@
+@base = http://localhost:3000/api/v1
+@kc = http://localhost:8180/realms/room-booking
+
+### OIDC discovery document
+GET {{kc}}/.well-known/openid-configuration
+
+### Provider public keys (JWKS)
+GET {{kc}}/protocol/openid-connect/certs
+
+### Token for alice (password grant – demo only; real clients use Authorization Code + PKCE)
+# @name alice
+POST {{kc}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=room-booking-cli&username=alice&password=alice-password&scope=openid
+
+### Call the API with the Keycloak token (user provisioned on first call)
+GET {{base}}/users/me
+Authorization: Bearer {{alice.response.body.access_token}}
+
+### Book as alice
+POST {{base}}/bookings
+Authorization: Bearer {{alice.response.body.access_token}}
+Content-Type: application/json
+
+{"roomId": "0199a3f0-0000-7000-8000-000000000002", "startTime": "2026-10-12T09:00:00Z", "endTime": "2026-10-12T10:00:00Z"}
+
+### Token for bob (roles USER + ADMIN)
+# @name bob
+POST {{kc}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=room-booking-cli&username=bob&password=bob-password
+
+###
+GET {{base}}/users/me
+Authorization: Bearer {{bob.response.body.access_token}}
+
+### Token issued for another client (no room-booking-api audience) -> 401
+# @name other
+POST {{kc}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=admin-cli&username=alice&password=alice-password
+
+###
+GET {{base}}/users/me
+Authorization: Bearer {{other.response.body.access_token}}

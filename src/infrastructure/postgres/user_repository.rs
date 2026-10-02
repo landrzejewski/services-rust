@@ -27,7 +27,7 @@ struct UserRow {
     created_at: DateTime<Utc>,
 }
 
-pub(super) fn role_to_db(role: Role) -> &'static str {
+fn role_to_db(role: Role) -> &'static str {
     match role {
         Role::User => "USER",
         Role::Admin => "ADMIN",
@@ -107,5 +107,23 @@ impl UserRepository for PostgresUserRepository {
         .fetch_one(&self.pool)
         .await?
         .try_into()
+    }
+
+    async fn upsert_external(&self, id: Uuid, email: &Email, role: Role) -> RepositoryResult<()> {
+        // `ON CONFLICT ... DO UPDATE` – PostgreSQL upsert: insert, or update the existing row
+        // atomically. Keeps e-mail and role in sync with the identity provider.
+        sqlx::query!(
+            r#"
+            INSERT INTO users (id, email, password_hash, role)
+            VALUES ($1, $2, NULL, $3)
+            ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, role = EXCLUDED.role
+            "#,
+            id,
+            email.as_str(),
+            role_to_db(role),
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 }

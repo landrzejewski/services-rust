@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::domain::{
     repositories::{RepositoryError, RepositoryResult, UserRepository},
-    user::{Email, NewUser, User},
+    user::{Email, NewUser, Role, User},
 };
 
 /// In-memory users – for tests.
@@ -52,5 +52,19 @@ impl UserRepository for InMemoryUserRepository {
         };
         users.insert(user.id, user.clone());
         Ok(user)
+    }
+
+    async fn upsert_external(&self, id: Uuid, email: &Email, role: Role) -> RepositoryResult<()> {
+        let mut users = self.users.write().expect("users lock poisoned");
+        let user = users.entry(id).or_insert_with(|| User {
+            id,
+            email: email.clone(),
+            password_hash: None,
+            role,
+            created_at: Utc::now(),
+        });
+        user.email = email.clone();
+        user.role = role;
+        Ok(())
     }
 }

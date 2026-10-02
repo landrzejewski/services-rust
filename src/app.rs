@@ -11,7 +11,7 @@ use axum::{Router, extract::FromRef};
 use sqlx::PgPool;
 
 use crate::{
-    api,
+    api::{self, authentication::Authenticator},
     config::{RoomRepositoryKind, Settings},
     domain::{
         auth_service::AuthService,
@@ -26,7 +26,7 @@ use crate::{
             self, PostgresBookingRepository, PostgresBookingUnitOfWork, PostgresRoomRepository,
             PostgresUserRepository,
         },
-        security::{Argon2PasswordHasher, JwtService},
+        security::{Argon2PasswordHasher, JwtService, OidcVerifier},
     },
 };
 
@@ -45,6 +45,7 @@ pub struct AppState {
     pub booking_service: Arc<BookingService>,
     pub auth_service: Arc<AuthService>,
     pub jwt: Arc<JwtService>,
+    pub authenticator: Arc<Authenticator>,
     /// Connection pool – used directly only by infrastructure concerns (readiness probe);
     /// business code accesses the database through repositories (step 015).
     pub db: PgPool,
@@ -99,11 +100,25 @@ pub async fn build_state(settings: &Settings) -> anyhow::Result<AppState> {
     let auth_service = Arc::new(AuthService::new(user_repository, password_hasher));
     let jwt = Arc::new(JwtService::new(&settings.auth)?);
 
+    // External identity provider (step 020).
+    let oidc = if settings.oidc.enabled {
+        tracing::info!(issuer = %settings.oidc.issuer, "OIDC tokens accepted");
+        Some(Arc::new(OidcVerifier::new(settings.oidc.clone())?))
+    } else {
+        None
+    };
+    let authenticator = Arc::new(Authenticator {
+        local: Arc::clone(&jwt),
+        oidc,
+        auth_service: Arc::clone(&auth_service),
+    });
+
     Ok(AppState {
         room_service,
         booking_service,
         auth_service,
         jwt,
+        authenticator,
         db,
     })
 }

@@ -1,6 +1,9 @@
 //! Registration and authentication (step 018).
 
-use std::sync::Arc;
+use std::{
+    collections::HashSet,
+    sync::{Arc, RwLock},
+};
 
 use secrecy::SecretString;
 use uuid::Uuid;
@@ -15,11 +18,43 @@ use crate::domain::{
 pub struct AuthService {
     users: Arc<dyn UserRepository>,
     hasher: Arc<dyn PasswordHasher>,
+    /// External users already provisioned by this process (avoids a DB write per request).
+    provisioned: RwLock<HashSet<Uuid>>,
 }
 
 impl AuthService {
     pub fn new(users: Arc<dyn UserRepository>, hasher: Arc<dyn PasswordHasher>) -> Self {
-        Self { users, hasher }
+        Self {
+            users,
+            hasher,
+            provisioned: RwLock::new(HashSet::new()),
+        }
+    }
+
+    /// Just-in-time provisioning (step 020): users authenticated by the identity provider get a
+    /// local `users` row on their first request, so bookings can reference them (foreign key).
+    /// The provider stays the source of truth for e-mail and role.
+    pub async fn ensure_external_user(
+        &self,
+        id: Uuid,
+        email: &str,
+        role: Role,
+    ) -> DomainResult<()> {
+        if self
+            .provisioned
+            .read()
+            .expect("provisioned lock poisoned")
+            .contains(&id)
+        {
+            return Ok(());
+        }
+        let email = Email::parse(email).map_err(|_| DomainError::Unauthenticated)?;
+        self.users.upsert_external(id, &email, role).await?;
+        self.provisioned
+            .write()
+            .expect("provisioned lock poisoned")
+            .insert(id);
+        Ok(())
     }
 
     /// Self-registration always creates a regular `USER` – a client can't choose its role.

@@ -24,6 +24,7 @@ pub struct Settings {
     pub database: DatabaseSettings,
     pub storage: StorageSettings,
     pub auth: AuthSettings,
+    pub oidc: OidcSettings,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -122,6 +123,21 @@ impl std::fmt::Debug for AuthSettings {
             .field("access_token_ttl_minutes", &self.access_token_ttl_minutes)
             .finish()
     }
+}
+
+/// External OpenID Connect provider (step 020).
+#[derive(Debug, Clone, Deserialize)]
+pub struct OidcSettings {
+    pub enabled: bool,
+    /// Expected `iss` claim; also the base of the discovery document URL.
+    pub issuer: String,
+    /// Expected `aud` claim – this API's client id at the provider.
+    pub audience: String,
+    /// Override where the discovery document is fetched from (e.g. internal hostname in
+    /// Docker); default: `{issuer}/.well-known/openid-configuration`.
+    pub discovery_url: Option<String>,
+    /// Minimum time between two JWKS downloads (protection against floods of unknown `kid`s).
+    pub jwks_min_refresh_secs: u64,
 }
 
 impl ServerSettings {

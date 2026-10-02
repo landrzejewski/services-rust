@@ -37,3 +37,10 @@ room_repository = "sqlx"
 jwt_issuer = "room-booking-service"
 jwt_audience = "room-booking-api"
 access_token_ttl_minutes = 15
+
+[oidc]
+# Tokens issued by Keycloak (compose service `keycloak`) are accepted besides our own (step 020).
+enabled = true
+issuer = "http://localhost:8180/realms/room-booking"
+audience = "room-booking-api"
+jwks_min_refresh_secs = 60
