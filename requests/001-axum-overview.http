@@ -1,0 +1,17 @@
+### Index page (HTML)
+GET http://localhost:3000/
+
+### Health check (JSON)
+GET http://localhost:3000/health
+
+### Existing room
+GET http://localhost:3000/rooms/1
+
+### Missing room -> 404
+GET http://localhost:3000/rooms/2
+
+### Invalid path parameter -> 400 (rejected by the Path extractor)
+GET http://localhost:3000/rooms/abc
+
+### Unknown route -> 404 (no handler matched)
+GET http://localhost:3000/unknown
