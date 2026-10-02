@@ -10,14 +10,13 @@ so business logic stays independent of HTTP and storage.
 ### Layers
 
 ```
-┌──────────────────────────────────────────────┐
-│ api             routing, handlers, JSON, HTTP status codes    │
-├──────────────────────────────────────────────┤
-│ domain          models, services, business rules              │
-├──────────────────────────────────────────────┤
-│ infrastructure  repositories (memory, PostgreSQL), external systems │
-└──────────────────────────────────────────────┘
-  app / server  – composition root + process lifecycle (knows everything, used by main)
+api             routing, handlers, JSON, HTTP status codes
+ │ calls
+domain          models, services, business rules
+ │ uses
+infrastructure  repositories (memory, PostgreSQL), external systems
+
+app / server    composition root + process lifecycle (knows everything, used by main)
 ```
 
 | Layer | Knows about | Must not know about |
