@@ -6,7 +6,9 @@
 
 use std::sync::Arc;
 
+use anyhow::Context;
 use axum::{Router, extract::FromRef};
+use sqlx::PgPool;
 
 use crate::{
     api,
@@ -18,7 +20,10 @@ use crate::{
         repositories::{BookingRepository, RoomRepository},
         room_service::RoomService,
     },
-    infrastructure::memory::{InMemoryBookingRepository, InMemoryRoomRepository},
+    infrastructure::{
+        memory::{InMemoryBookingRepository, InMemoryRoomRepository},
+        postgres,
+    },
 };
 
 // Application state shared by all handlers.
@@ -34,12 +39,25 @@ use crate::{
 pub struct AppState {
     pub room_service: Arc<RoomService>,
     pub booking_service: Arc<BookingService>,
+    /// Connection pool – used directly only by infrastructure concerns (readiness probe);
+    /// business code accesses the database through repositories (step 015).
+    pub db: PgPool,
 }
 
-/// Builds the object graph: repositories -> services -> state.
-pub fn build_state(settings: &Settings) -> AppState {
+/// Builds the object graph: database pool -> repositories -> services -> state.
+///
+/// `async` + `anyhow::Result` since step 014: connecting to the database can fail at startup.
+/// `anyhow` is a good fit here – the caller only reports the error and exits, it doesn't
+/// need to `match` on error variants.
+pub async fn build_state(settings: &Settings) -> anyhow::Result<AppState> {
+    let db = postgres::connect(&settings.database).await?;
+    if settings.database.run_migrations {
+        postgres::run_migrations(&db).await?;
+    }
+
     // The concrete implementation is chosen here and only here. Switching to PostgreSQL
     // (step 015) changes these lines – services and handlers stay untouched.
+    // Repositories are still in-memory in this step; only the pool + migrations are set up.
     // Type annotation `Arc<dyn Trait>` performs the *unsizing coercion* from the concrete type.
     let room_repository: Arc<dyn RoomRepository> =
         Arc::new(InMemoryRoomRepository::with_sample_data());
@@ -66,15 +84,24 @@ pub fn build_state(settings: &Settings) -> AppState {
         policy,
     ));
 
-    AppState {
+    Ok(AppState {
         room_service,
         booking_service,
-    }
+        db,
+    })
 }
 
-/// Builds the state and the router with middleware.
-pub fn build_router(settings: &Settings) -> Router {
-    let state = build_state(settings);
+/// Builds the router with middleware for the given state.
+pub fn build_router(state: AppState, settings: &Settings) -> Router {
     // Middleware wraps the complete router (all routes + fallbacks), step 011.
     api::middleware::apply(api::router(state), &settings.http)
+}
+
+/// Convenience used by `server::run`: state + router, with context for startup errors.
+pub async fn build(settings: &Settings) -> anyhow::Result<(AppState, Router)> {
+    let state = build_state(settings)
+        .await
+        .context("failed to initialize application state")?;
+    let router = build_router(state.clone(), settings);
+    Ok((state, router))
 }

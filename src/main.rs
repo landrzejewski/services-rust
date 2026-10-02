@@ -7,6 +7,7 @@
 
 // The package name `rust-services` becomes the library crate name `rust_services`
 // (`-` is replaced by `_`). The binary uses it like any external crate.
+use anyhow::Context;
 use rust_services::{config::Settings, server, telemetry};
 
 // In step 001 we used `#[tokio::main]`. That attribute is only syntactic sugar –
@@ -26,7 +27,10 @@ use rust_services::{config::Settings, server, telemetry};
 //
 // Startup order matters: env -> config -> logging -> runtime. All of these are synchronous,
 // so they happen before the runtime exists (configuration even decides how the runtime is built).
-fn main() {
+//
+// `main` may return `Result`: on `Err` the error is printed (with `anyhow`: including the whole
+// context chain) and the process exits with code 1.
+fn main() -> anyhow::Result<()> {
     // Load variables from `.env` into the process environment (if the file exists).
     // Must run before anything reads env variables and before other threads are spawned.
     // Existing environment variables are NOT overwritten – real env (Docker, CI, shell) wins.
@@ -34,7 +38,7 @@ fn main() {
     dotenvy::dotenv().ok();
 
     // Fail fast: an invalid configuration should stop the process immediately with a clear message.
-    let settings = Settings::load().expect("failed to load configuration");
+    let settings = Settings::load().context("failed to load configuration")?;
 
     telemetry::init_tracing();
     tracing::debug!(?settings, "configuration loaded");
@@ -53,9 +57,9 @@ fn main() {
         // Without it `TcpListener` or `tokio::time::sleep` would panic.
         .enable_all()
         .build()
-        .expect("failed to build Tokio runtime");
+        .context("failed to build Tokio runtime")?;
 
     // `block_on` runs the future on the current (main) thread until it completes.
     // Everything spawned inside it runs on the worker threads.
-    runtime.block_on(server::run(settings));
+    runtime.block_on(server::run(settings))
 }

@@ -21,6 +21,7 @@ pub struct Settings {
     pub runtime: RuntimeSettings,
     pub http: HttpSettings,
     pub booking: BookingSettings,
+    pub database: DatabaseSettings,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -57,6 +58,32 @@ pub struct BookingSettings {
     pub max_duration_minutes: i64,
 }
 
+/// PostgreSQL connection settings (step 014).
+// No `Debug` derive: the URL contains the password and settings are logged at startup.
+#[derive(Clone, Deserialize)]
+pub struct DatabaseSettings {
+    pub url: String,
+    pub max_connections: u32,
+    pub min_connections: u32,
+    pub acquire_timeout_secs: u64,
+    /// Apply pending migrations at startup (convenient for development; in production often
+    /// a separate deployment step).
+    pub run_migrations: bool,
+}
+
+// Manual `Debug` that masks the secret – `{:?}` on `Settings` must never print passwords.
+impl std::fmt::Debug for DatabaseSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DatabaseSettings")
+            .field("url", &"***")
+            .field("max_connections", &self.max_connections)
+            .field("min_connections", &self.min_connections)
+            .field("acquire_timeout_secs", &self.acquire_timeout_secs)
+            .field("run_migrations", &self.run_migrations)
+            .finish()
+    }
+}
+
 impl ServerSettings {
     /// Parses `host:port` into a socket address – invalid host fails at startup.
     pub fn address(&self) -> Result<SocketAddr, std::net::AddrParseError> {
@@ -68,7 +95,14 @@ impl Settings {
     pub fn load() -> Result<Self, ConfigError> {
         let environment = std::env::var("APP_ENVIRONMENT").unwrap_or_else(|_| "local".into());
 
-        Config::builder()
+        let mut builder = Config::builder();
+        // `DATABASE_URL` is the de-facto standard variable (sqlx-cli, sqlx macros, PaaS
+        // platforms). Used as a default; `APP_DATABASE__URL` still overrides it.
+        if let Ok(url) = std::env::var("DATABASE_URL") {
+            builder = builder.set_default("database.url", url)?;
+        }
+
+        builder
             // `required(true)` – startup fails when the defaults file is missing.
             .add_source(File::with_name("config/default").required(true))
             .add_source(File::with_name(&format!("config/{environment}")).required(false))

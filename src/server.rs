@@ -2,30 +2,32 @@
 
 use std::time::Duration;
 
+use anyhow::Context;
 use tokio_util::sync::CancellationToken;
 
 use crate::{app, config::Settings};
 
 // The async entry point of the application – exactly what `#[tokio::main] async fn main` used to contain.
-pub async fn run(settings: Settings) {
+// Returns `anyhow::Result` since step 014: startup can fail (database unreachable, port in use).
+pub async fn run(settings: Settings) -> anyhow::Result<()> {
     // A `CancellationToken` is a cheap, cloneable "stop" signal shared between tasks.
     // The shutdown handler cancels it; background tasks (if any) and the grace-period timer watch it.
     let shutdown = CancellationToken::new();
 
     // Composition root builds the whole object graph and returns a ready `Router`.
-    let router = app::build_router(&settings);
+    let (state, router) = app::build(&settings).await?;
 
     let addr = settings
         .server
         .address()
-        .expect("invalid server.host / server.port");
+        .context("invalid server.host / server.port")?;
 
     // Bind a TCP socket. `0.0.0.0` accepts connections on all interfaces (containers, see
     // `config/production.toml`); `127.0.0.1` (default) accepts local connections only.
     // Port `0` lets the OS pick a free port – handy in tests.
     let listener = tokio::net::TcpListener::bind(addr)
         .await
-        .unwrap_or_else(|err| panic!("failed to bind to {addr}: {err}"));
+        .with_context(|| format!("failed to bind to {addr}"))?;
 
     // `expect` instead of `unwrap` (denied by the `clippy::unwrap_used` lint):
     // if it ever panics, the message explains which assumption was broken.
@@ -63,8 +65,13 @@ pub async fn run(settings: Settings) {
         }
     }
 
+    // Close the pool gracefully: waits for borrowed connections to be returned, then sends
+    // a proper termination message to PostgreSQL for each connection.
+    state.db.close().await;
+
     tracing::info!("server stopped");
     // Returning from `run` -> `block_on` returns -> runtime is dropped -> remaining tasks are cancelled.
+    Ok(())
 }
 
 // Completes when the process receives Ctrl+C (SIGINT) or SIGTERM.

@@ -20,3 +20,10 @@ slow_request_threshold_ms = 500
 [booking]
 max_active_bookings_per_user = 3
 max_duration_minutes = 480
+
+[database]
+# url – secret, comes from DATABASE_URL or APP_DATABASE__URL (see .env.example)
+max_connections = 10
+min_connections = 1
+acquire_timeout_secs = 5
+run_migrations = true
