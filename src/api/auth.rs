@@ -16,13 +16,17 @@ use crate::{
         dto::{
             bookings::BookingResponse,
             pagination::{PageQuery, PageResponse},
-            users::{LoginRequest, RegisterRequest, UserResponse},
+            users::{LoginRequest, RegisterRequest, TokenResponse, UserResponse},
         },
-        error::ApiResult,
+        error::{ApiError, ApiResult},
         extractors::{Json, Query, ValidatedJson},
     },
     app::AppState,
-    domain::{auth_service::AuthService, booking::BookingFilter, booking_service::BookingService},
+    domain::{
+        auth_service::AuthService, booking::BookingFilter, booking_service::BookingService,
+        error::DomainError,
+    },
+    infrastructure::security::JwtService,
 };
 
 pub fn router() -> Router<AppState> {
@@ -48,14 +52,22 @@ async fn register(
     ))
 }
 
-// Step 018: login only verifies credentials and returns the user.
-// Step 019 turns it into the endpoint issuing access tokens.
+// Step 019: exchange credentials for a short-lived access token.
+// The password is verified once here; subsequent requests carry only the token.
 async fn login(
     State(auth): State<Arc<AuthService>>,
+    State(jwt): State<Arc<JwtService>>,
     Json(request): Json<LoginRequest>,
-) -> ApiResult<Json<UserResponse>> {
+) -> ApiResult<Json<TokenResponse>> {
     let user = auth.authenticate(&request.email, &request.password).await?;
-    Ok(Json(user.into()))
+    let token = jwt.issue(&user).map_err(|e| {
+        ApiError::Domain(DomainError::Internal(format!("token issuing failed: {e}")))
+    })?;
+    Ok(Json(TokenResponse {
+        access_token: token.token,
+        token_type: "Bearer",
+        expires_in: token.expires_in_seconds,
+    }))
 }
 
 async fn me(State(auth): State<Arc<AuthService>>, user: AuthUser) -> ApiResult<Json<UserResponse>> {

@@ -73,3 +73,13 @@ impl From<User> for UserResponse {
         }
     }
 }
+
+/// Response of `POST /auth/login` – shape follows the OAuth 2.0 token response (RFC 6749 §5.1).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenResponse {
+    pub access_token: String,
+    pub token_type: &'static str,
+    /// Lifetime in seconds.
+    pub expires_in: i64,
+}

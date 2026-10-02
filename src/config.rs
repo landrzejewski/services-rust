@@ -23,6 +23,7 @@ pub struct Settings {
     pub booking: BookingSettings,
     pub database: DatabaseSettings,
     pub storage: StorageSettings,
+    pub auth: AuthSettings,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -98,6 +99,29 @@ pub enum RoomRepositoryKind {
     Sqlx,
     SeaOrm,
     Diesel,
+}
+
+/// Token settings (step 019).
+#[derive(Clone, Deserialize)]
+pub struct AuthSettings {
+    /// HMAC key for HS256 – a secret: only from env (`APP_AUTH__JWT_SECRET`), at least 32 bytes.
+    pub jwt_secret: secrecy::SecretString,
+    /// `iss` claim – who issued the token.
+    pub jwt_issuer: String,
+    /// `aud` claim – for whom the token is intended.
+    pub jwt_audience: String,
+    pub access_token_ttl_minutes: i64,
+}
+
+impl std::fmt::Debug for AuthSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthSettings")
+            .field("jwt_secret", &"***")
+            .field("jwt_issuer", &self.jwt_issuer)
+            .field("jwt_audience", &self.jwt_audience)
+            .field("access_token_ttl_minutes", &self.access_token_ttl_minutes)
+            .finish()
+    }
 }
 
 impl ServerSettings {

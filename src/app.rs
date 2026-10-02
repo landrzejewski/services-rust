@@ -26,7 +26,7 @@ use crate::{
             self, PostgresBookingRepository, PostgresBookingUnitOfWork, PostgresRoomRepository,
             PostgresUserRepository,
         },
-        security::Argon2PasswordHasher,
+        security::{Argon2PasswordHasher, JwtService},
     },
 };
 
@@ -44,6 +44,7 @@ pub struct AppState {
     pub room_service: Arc<RoomService>,
     pub booking_service: Arc<BookingService>,
     pub auth_service: Arc<AuthService>,
+    pub jwt: Arc<JwtService>,
     /// Connection pool – used directly only by infrastructure concerns (readiness probe);
     /// business code accesses the database through repositories (step 015).
     pub db: PgPool,
@@ -96,11 +97,13 @@ pub async fn build_state(settings: &Settings) -> anyhow::Result<AppState> {
         Arc::new(PostgresUserRepository::new(db.clone()));
     let password_hasher = Arc::new(Argon2PasswordHasher::new()?);
     let auth_service = Arc::new(AuthService::new(user_repository, password_hasher));
+    let jwt = Arc::new(JwtService::new(&settings.auth)?);
 
     Ok(AppState {
         room_service,
         booking_service,
         auth_service,
+        jwt,
         db,
     })
 }

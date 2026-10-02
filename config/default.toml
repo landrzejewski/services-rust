@@ -31,3 +31,9 @@ run_migrations = true
 [storage]
 # RoomRepository implementation: "sqlx" | "sea-orm" (feature orm-sea) | "diesel" (feature orm-diesel)
 room_repository = "sqlx"
+
+[auth]
+# jwt_secret – secret, from APP_AUTH__JWT_SECRET (see .env.example)
+jwt_issuer = "room-booking-service"
+jwt_audience = "room-booking-api"
+access_token_ttl_minutes = 15

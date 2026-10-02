@@ -35,6 +35,10 @@ pub enum ApiError {
     #[error(transparent)]
     Query(#[from] QueryRejection),
 
+    /// A Bearer token was sent but is invalid or expired (step 019).
+    #[error("invalid access token: {0}")]
+    InvalidToken(String),
+
     #[error("no route for {0}")]
     RouteNotFound(String),
     #[error("method not allowed")]
@@ -106,6 +110,12 @@ impl IntoResponse for ApiError {
                 "Invalid query parameter",
             )
             .with_detail(rejection.body_text()),
+            ApiError::InvalidToken(reason) => ProblemDetails::new(
+                StatusCode::UNAUTHORIZED,
+                "invalid-token",
+                "Invalid access token",
+            )
+            .with_detail(reason.clone()),
             ApiError::RouteNotFound(_) => {
                 ProblemDetails::new(StatusCode::NOT_FOUND, "not-found", "Route not found")
                     .with_detail(self.to_string())
@@ -127,11 +137,20 @@ impl IntoResponse for ApiError {
         }
         let mut response = problem.into_response();
         // RFC 9110: a 401 response MUST tell the client which authentication scheme to use.
+        // RFC 6750: for a rejected Bearer token add `error="invalid_token"` (+ description),
+        // so clients know they should refresh/obtain a new token.
         if response.status() == StatusCode::UNAUTHORIZED {
-            response.headers_mut().insert(
-                header::WWW_AUTHENTICATE,
-                HeaderValue::from_static(r#"Basic realm="room-booking""#),
-            );
+            let challenge = match &self {
+                ApiError::InvalidToken(reason) => format!(
+                    r#"Bearer realm="room-booking", error="invalid_token", error_description="{reason}""#
+                ),
+                _ => r#"Bearer realm="room-booking""#.to_string(),
+            };
+            if let Ok(value) = HeaderValue::from_str(&challenge) {
+                response
+                    .headers_mut()
+                    .insert(header::WWW_AUTHENTICATE, value);
+            }
         }
         response
     }

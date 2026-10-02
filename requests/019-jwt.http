@@ -1,0 +1,30 @@
+@base = http://localhost:3000/api/v1
+
+### Login -> access token (saved by the HTTP client as `login`)
+# @name login
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{"email": "user@booking.local", "password": "user-password-123"}
+
+### Use the token
+GET {{base}}/users/me
+Authorization: Bearer {{login.response.body.accessToken}}
+
+### Create a booking with the token
+POST {{base}}/bookings
+Authorization: Bearer {{login.response.body.accessToken}}
+Content-Type: application/json
+
+{"roomId": "0199a3f0-0000-7000-8000-000000000002", "startTime": "2026-10-09T13:00:00Z", "endTime": "2026-10-09T14:00:00Z"}
+
+### My bookings
+GET {{base}}/users/me/bookings
+Authorization: Bearer {{login.response.body.accessToken}}
+
+### Invalid token -> 401, WWW-Authenticate: Bearer error="invalid_token"
+GET {{base}}/users/me
+Authorization: Bearer not.a.token
+
+### No token -> 401, WWW-Authenticate: Bearer realm="room-booking"
+GET {{base}}/users/me
