@@ -1,0 +1,44 @@
+@base = http://localhost:3000/api/v1
+
+### List rooms – UUID ids, camelCase, opening hours as HH:MM
+# @name rooms
+GET {{base}}/rooms
+
+### Create room – description optional, closesAt defaults to 18:00
+POST {{base}}/rooms
+Content-Type: application/json
+
+{"name": "Red room", "capacity": 6, "opensAt": "09:30"}
+
+### Unknown field (deny_unknown_fields) -> 422
+POST {{base}}/rooms
+Content-Type: application/json
+
+{"name": "Red room", "capasity": 6}
+
+### Invalid custom time format -> 422 with field path
+POST {{base}}/rooms
+Content-Type: application/json
+
+{"name": "Red room", "capacity": 6, "closesAt": "8pm"}
+
+### Create booking – offset converted to UTC, attendees defaults to 1
+# Replace roomId with an id returned by GET /rooms
+POST {{base}}/bookings
+Content-Type: application/json
+
+{
+  "roomId": "{{rooms.response.body.$[0].id}}",
+  "userId": "0199a3f0-0000-7000-8000-000000000007",
+  "startTime": "2026-10-05T11:00:00+02:00",
+  "endTime": "2026-10-05T12:00:00+02:00"
+}
+
+### Enum in query string
+GET {{base}}/bookings?status=ACTIVE
+
+### Wrong enum value -> 400
+GET {{base}}/bookings?status=active
+
+### Invalid UUID in path -> 400
+GET {{base}}/rooms/not-a-uuid

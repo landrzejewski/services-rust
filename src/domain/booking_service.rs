@@ -2,6 +2,8 @@
 
 use std::sync::Arc;
 
+use uuid::Uuid;
+
 use crate::{
     domain::booking::{Booking, BookingFilter, BookingStatus, NewBooking},
     infrastructure::memory::{InMemoryBookingRepository, InMemoryRoomRepository},
@@ -28,7 +30,7 @@ impl BookingService {
         Some(self.bookings.insert(new_booking).await)
     }
 
-    pub async fn get_booking(&self, id: u64) -> Option<Booking> {
+    pub async fn get_booking(&self, id: Uuid) -> Option<Booking> {
         self.bookings.find_by_id(id).await
     }
 
@@ -37,7 +39,7 @@ impl BookingService {
     }
 
     /// Cancellation keeps the record (history) and only changes its status.
-    pub async fn cancel_booking(&self, id: u64) -> Option<Booking> {
+    pub async fn cancel_booking(&self, id: Uuid) -> Option<Booking> {
         self.bookings
             .update_status(id, BookingStatus::Cancelled)
             .await

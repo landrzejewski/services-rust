@@ -1,10 +1,7 @@
-use std::{
-    collections::HashMap,
-    sync::{
-        RwLock,
-        atomic::{AtomicU64, Ordering},
-    },
-};
+use std::{collections::HashMap, sync::RwLock};
+
+use chrono::NaiveTime;
+use uuid::Uuid;
 
 use crate::domain::room::{NewRoom, Room, RoomFilter};
 
@@ -17,29 +14,32 @@ use crate::domain::room::{NewRoom, Room, RoomFilter};
 // for a few nanoseconds and NEVER across an `.await`. The async lock is needed only when a guard
 // must live across `.await` points; it is slower otherwise.
 pub struct InMemoryRoomRepository {
-    rooms: RwLock<HashMap<u64, Room>>,
-    // Id generator – plays the role of a database sequence. Atomics are lock-free;
-    // `fetch_add` returns the previous value and increments in one indivisible step.
-    // `Ordering::Relaxed` is enough: we only need unique numbers, not ordering with other memory.
-    next_id: AtomicU64,
+    rooms: RwLock<HashMap<Uuid, Room>>,
 }
 
 impl InMemoryRoomRepository {
     pub fn new() -> Self {
         Self {
             rooms: RwLock::new(HashMap::new()),
-            next_id: AtomicU64::new(1),
         }
     }
 
     /// Repository pre-filled with sample data.
     pub fn with_sample_data() -> Self {
         let repository = Self::new();
-        for (name, capacity) in [("Blue room", 8), ("Green room", 4), ("Conference hall", 40)] {
+        let samples = [
+            ("Blue room", 8, (8, 18)),
+            ("Green room", 4, (8, 18)),
+            ("Conference hall", 40, (7, 22)),
+        ];
+        for (name, capacity, (opens, closes)) in samples {
             let room = Room {
-                id: repository.generate_id(),
+                id: Uuid::now_v7(),
                 name: name.to_string(),
+                description: None,
                 capacity,
+                opens_at: NaiveTime::from_hms_opt(opens, 0, 0).expect("valid sample hour"),
+                closes_at: NaiveTime::from_hms_opt(closes, 0, 0).expect("valid sample hour"),
             };
             repository
                 .rooms
@@ -48,10 +48,6 @@ impl InMemoryRoomRepository {
                 .insert(room.id, room);
         }
         repository
-    }
-
-    fn generate_id(&self) -> u64 {
-        self.next_id.fetch_add(1, Ordering::Relaxed)
     }
 
     // Methods are `async` although the in-memory version does no I/O: the signatures already
@@ -66,11 +62,12 @@ impl InMemoryRoomRepository {
             .cloned()
             .collect();
         // HashMap has no order – sort to get a stable API response.
+        // UUID v7 starts with a timestamp, so sorting by id = sorting by creation time.
         result.sort_by_key(|room| room.id);
         result
     }
 
-    pub async fn find_by_id(&self, id: u64) -> Option<Room> {
+    pub async fn find_by_id(&self, id: Uuid) -> Option<Room> {
         // The guard returned by `read()` is dropped at the end of the statement,
         // releasing the lock; we return a clone, not a reference into the map.
         self.rooms
@@ -82,9 +79,14 @@ impl InMemoryRoomRepository {
 
     pub async fn insert(&self, new_room: NewRoom) -> Room {
         let room = Room {
-            id: self.generate_id(),
+            // UUID v7 = 48-bit Unix timestamp (ms) + random bits: unique without coordination
+            // and roughly ordered by creation time (better B-tree index locality than random v4).
+            id: Uuid::now_v7(),
             name: new_room.name,
+            description: new_room.description,
             capacity: new_room.capacity,
+            opens_at: new_room.opens_at,
+            closes_at: new_room.closes_at,
         };
         self.rooms
             .write()
@@ -93,16 +95,19 @@ impl InMemoryRoomRepository {
         room
     }
 
-    pub async fn update(&self, id: u64, data: NewRoom) -> Option<Room> {
+    pub async fn update(&self, id: Uuid, data: NewRoom) -> Option<Room> {
         let mut rooms = self.rooms.write().expect("rooms lock poisoned");
         // `get_mut` returns `Option<&mut Room>`; `?` returns `None` when the id is unknown.
         let room = rooms.get_mut(&id)?;
         room.name = data.name;
+        room.description = data.description;
         room.capacity = data.capacity;
+        room.opens_at = data.opens_at;
+        room.closes_at = data.closes_at;
         Some(room.clone())
     }
 
-    pub async fn delete(&self, id: u64) -> bool {
+    pub async fn delete(&self, id: Uuid) -> bool {
         self.rooms
             .write()
             .expect("rooms lock poisoned")

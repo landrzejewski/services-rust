@@ -1,36 +1,32 @@
-use std::{
-    collections::HashMap,
-    sync::{
-        RwLock,
-        atomic::{AtomicU64, Ordering},
-    },
-};
+use std::{collections::HashMap, sync::RwLock};
+
+use chrono::Utc;
+use uuid::Uuid;
 
 use crate::domain::booking::{Booking, BookingFilter, BookingStatus, NewBooking};
 
 // Same structure as `InMemoryRoomRepository` – see comments there.
 pub struct InMemoryBookingRepository {
-    bookings: RwLock<HashMap<u64, Booking>>,
-    next_id: AtomicU64,
+    bookings: RwLock<HashMap<Uuid, Booking>>,
 }
 
 impl InMemoryBookingRepository {
     pub fn new() -> Self {
         Self {
             bookings: RwLock::new(HashMap::new()),
-            next_id: AtomicU64::new(1),
         }
     }
 
     pub async fn insert(&self, new_booking: NewBooking) -> Booking {
         let booking = Booking {
-            id: self.next_id.fetch_add(1, Ordering::Relaxed),
+            id: Uuid::now_v7(),
             room_id: new_booking.room_id,
             user_id: new_booking.user_id,
             start_time: new_booking.start_time,
             end_time: new_booking.end_time,
             attendees: new_booking.attendees,
             status: BookingStatus::Active,
+            created_at: Utc::now(),
         };
         self.bookings
             .write()
@@ -39,7 +35,7 @@ impl InMemoryBookingRepository {
         booking
     }
 
-    pub async fn find_by_id(&self, id: u64) -> Option<Booking> {
+    pub async fn find_by_id(&self, id: Uuid) -> Option<Booking> {
         self.bookings
             .read()
             .expect("bookings lock poisoned")
@@ -58,7 +54,7 @@ impl InMemoryBookingRepository {
         result
     }
 
-    pub async fn update_status(&self, id: u64, status: BookingStatus) -> Option<Booking> {
+    pub async fn update_status(&self, id: Uuid, status: BookingStatus) -> Option<Booking> {
         let mut bookings = self.bookings.write().expect("bookings lock poisoned");
         let booking = bookings.get_mut(&id)?;
         booking.status = status;

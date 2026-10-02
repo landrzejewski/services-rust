@@ -2,6 +2,8 @@
 
 use std::sync::Arc;
 
+use uuid::Uuid;
+
 use crate::{
     domain::room::{NewRoom, Room, RoomFilter},
     infrastructure::memory::InMemoryRoomRepository,
@@ -28,7 +30,7 @@ impl RoomService {
     }
 
     /// `None` = room does not exist. Error types replace `Option` in step 010.
-    pub async fn get_room(&self, id: u64) -> Option<Room> {
+    pub async fn get_room(&self, id: Uuid) -> Option<Room> {
         self.repository.find_by_id(id).await
     }
 
@@ -36,12 +38,12 @@ impl RoomService {
         self.repository.insert(new_room).await
     }
 
-    pub async fn update_room(&self, id: u64, data: NewRoom) -> Option<Room> {
+    pub async fn update_room(&self, id: Uuid, data: NewRoom) -> Option<Room> {
         self.repository.update(id, data).await
     }
 
     /// Returns `false` when the room did not exist.
-    pub async fn delete_room(&self, id: u64) -> bool {
+    pub async fn delete_room(&self, id: Uuid) -> bool {
         self.repository.delete(id).await
     }
 }

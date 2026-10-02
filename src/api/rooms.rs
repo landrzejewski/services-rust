@@ -5,6 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
+use uuid::Uuid;
 
 use crate::{
     app::AppState,
@@ -28,8 +29,8 @@ pub fn router() -> Router<AppState> {
 // `State<AppState>` extractor gives the handler access to the shared application state
 // (the value passed to `Router::with_state`). Destructuring `State(state)` unwraps it.
 //
-// `Query<RoomFilter>` deserializes the query string: `/rooms?min_capacity=5&name=room`.
-// Unknown parameters are ignored; a value of a wrong type (`min_capacity=abc`) -> 400.
+// `Query<RoomFilter>` deserializes the query string: `/rooms?minCapacity=5&name=room`.
+// Unknown parameters are ignored; a value of a wrong type (`minCapacity=abc`) -> 400.
 async fn list_rooms(
     State(state): State<AppState>,
     Query(filter): Query<RoomFilter>,
@@ -37,13 +38,13 @@ async fn list_rooms(
     Json(state.room_service.list_rooms(&filter).await)
 }
 
-// `Path<u64>` is an *extractor*: Axum parses the `{id}` segment into `u64`
-// before calling the handler. If parsing fails (e.g. `/rooms/abc`), the handler
+// `Path<Uuid>` is an *extractor*: Axum parses the `{id}` segment into `Uuid` (any type
+// implementing `Deserialize` works) before calling the handler. If parsing fails (e.g. `/rooms/abc`), the handler
 // is not called at all and Axum responds with `400 Bad Request`.
 //
 // Order of extractors: `State` and `Path` read only request *parts*, so any order works;
 // a body extractor (`Json`) would have to be the last argument.
-async fn get_room(State(state): State<AppState>, Path(id): Path<u64>) -> Response {
+async fn get_room(State(state): State<AppState>, Path(id): Path<Uuid>) -> Response {
     // The handler only translates: domain `Option<Room>` -> HTTP 200 / 404.
     match state.room_service.get_room(id).await {
         Some(room) => Json(room).into_response(),
@@ -72,7 +73,7 @@ async fn create_room(State(state): State<AppState>, Json(new_room): Json<NewRoom
 // PUT = full replacement of the resource (all fields required). PATCH would be a partial update.
 async fn update_room(
     State(state): State<AppState>,
-    Path(id): Path<u64>,
+    Path(id): Path<Uuid>,
     Json(data): Json<NewRoom>,
 ) -> Response {
     match state.room_service.update_room(id, data).await {
@@ -82,7 +83,7 @@ async fn update_room(
 }
 
 // 204 No Content – success without a response body.
-async fn delete_room(State(state): State<AppState>, Path(id): Path<u64>) -> Response {
+async fn delete_room(State(state): State<AppState>, Path(id): Path<Uuid>) -> Response {
     if state.room_service.delete_room(id).await {
         StatusCode::NO_CONTENT.into_response()
     } else {
@@ -93,7 +94,7 @@ async fn delete_room(State(state): State<AppState>, Path(id): Path<u64>) -> Resp
 // Sub-resource: bookings belonging to one room. Reuses the booking service with a fixed filter.
 async fn list_room_bookings(
     State(state): State<AppState>,
-    Path(id): Path<u64>,
+    Path(id): Path<Uuid>,
 ) -> Json<Vec<Booking>> {
     let filter = BookingFilter {
         room_id: Some(id),
@@ -103,6 +104,6 @@ async fn list_room_bookings(
     Json(state.booking_service.list_bookings(&filter).await)
 }
 
-fn room_not_found(id: u64) -> Response {
+fn room_not_found(id: Uuid) -> Response {
     (StatusCode::NOT_FOUND, format!("room {id} not found")).into_response()
 }
