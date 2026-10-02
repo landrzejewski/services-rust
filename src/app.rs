@@ -17,10 +17,12 @@ use crate::{
         booking_policy::BookingPolicy,
         booking_service::BookingService,
         clock::{Clock, SystemClock},
-        repositories::{BookingRepository, RoomRepository},
+        repositories::{BookingRepository, BookingUnitOfWork, RoomRepository},
         room_service::RoomService,
     },
-    infrastructure::postgres::{self, PostgresBookingRepository, PostgresRoomRepository},
+    infrastructure::postgres::{
+        self, PostgresBookingRepository, PostgresBookingUnitOfWork, PostgresRoomRepository,
+    },
 };
 
 // Application state shared by all handlers.
@@ -60,6 +62,8 @@ pub async fn build_state(settings: &Settings) -> anyhow::Result<AppState> {
         Arc::new(PostgresRoomRepository::new(db.clone()));
     let booking_repository: Arc<dyn BookingRepository> =
         Arc::new(PostgresBookingRepository::new(db.clone()));
+    let booking_unit_of_work: Arc<dyn BookingUnitOfWork> =
+        Arc::new(PostgresBookingUnitOfWork::new(db.clone()));
 
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
 
@@ -77,7 +81,7 @@ pub async fn build_state(settings: &Settings) -> anyhow::Result<AppState> {
     ));
     let booking_service = Arc::new(BookingService::new(
         booking_repository,
-        room_repository,
+        booking_unit_of_work,
         clock,
         policy,
     ));

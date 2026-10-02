@@ -3,6 +3,7 @@
 
 mod booking_repository;
 mod room_repository;
+mod unit_of_work;
 
 use std::time::Duration;
 
@@ -11,6 +12,7 @@ use sqlx::{PgPool, postgres::PgPoolOptions};
 
 pub use booking_repository::PostgresBookingRepository;
 pub use room_repository::PostgresRoomRepository;
+pub use unit_of_work::PostgresBookingUnitOfWork;
 
 use crate::{config::DatabaseSettings, domain::repositories::RepositoryError};
 
@@ -78,6 +80,15 @@ impl From<sqlx::Error> for RepositoryError {
                 other => format!("unique constraint violated: {}", other.unwrap_or("unknown")),
             };
             return RepositoryError::Conflict(message);
+        }
+        // SQLSTATE 23P01 = exclusion_violation (`bookings_no_overlap`, step 016).
+        // sqlx has no dedicated helper for it, so compare the code.
+        if let sqlx::Error::Database(db_error) = &error
+            && db_error.code().as_deref() == Some("23P01")
+        {
+            return RepositoryError::Conflict(
+                "room is already booked in the requested period".to_string(),
+            );
         }
         RepositoryError::unexpected("database operation failed", error)
     }

@@ -23,24 +23,34 @@ impl InMemoryBookingRepository {
             bookings: RwLock::new(HashMap::new()),
         }
     }
+
+    /// Stores a complete booking (used by `InMemoryBookingUnitOfWork` on commit).
+    pub(super) fn put(&self, booking: Booking) {
+        self.bookings
+            .write()
+            .expect("bookings lock poisoned")
+            .insert(booking.id, booking);
+    }
+}
+
+/// New active booking with generated id and timestamp – what the database does on INSERT.
+pub(super) fn build_booking(new_booking: NewBooking) -> Booking {
+    Booking {
+        id: Uuid::now_v7(),
+        room_id: new_booking.room_id,
+        user_id: new_booking.user_id,
+        period: new_booking.period,
+        attendees: new_booking.attendees,
+        status: BookingStatus::Active,
+        created_at: Utc::now(),
+    }
 }
 
 #[async_trait]
 impl BookingRepository for InMemoryBookingRepository {
     async fn insert(&self, new_booking: NewBooking) -> RepositoryResult<Booking> {
-        let booking = Booking {
-            id: Uuid::now_v7(),
-            room_id: new_booking.room_id,
-            user_id: new_booking.user_id,
-            period: new_booking.period,
-            attendees: new_booking.attendees,
-            status: BookingStatus::Active,
-            created_at: Utc::now(),
-        };
-        self.bookings
-            .write()
-            .expect("bookings lock poisoned")
-            .insert(booking.id, booking.clone());
+        let booking = build_booking(new_booking);
+        self.put(booking.clone());
         Ok(booking)
     }
 

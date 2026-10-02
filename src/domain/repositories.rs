@@ -115,3 +115,52 @@ pub trait BookingRepository: Send + Sync {
         from: DateTime<Utc>,
     ) -> RepositoryResult<usize>;
 }
+
+// ---------------------------------------------------------------------------
+// Unit of work (step 016)
+// ---------------------------------------------------------------------------
+
+/// Starts a transaction for the "create booking" use case.
+///
+/// The check-then-insert sequence in `BookingService::create_booking` must be atomic:
+/// all reads and the insert happen in ONE database transaction, protected by locks, so two
+/// concurrent requests can't both pass the checks. The domain describes WHAT it needs
+/// (a transactional set of operations); the adapter decides HOW (PostgreSQL transaction + locks).
+#[async_trait]
+pub trait BookingUnitOfWork: Send + Sync {
+    async fn begin(&self) -> RepositoryResult<Box<dyn BookingTransaction>>;
+}
+
+/// Operations available inside the transaction.
+///
+/// Dropping the value without calling `commit` rolls everything back – an early return with `?`
+/// after a failed business rule automatically undoes the transaction.
+//
+// Only `Send` (no `Sync`): a transaction is used by one task at a time through `&mut self`.
+#[async_trait]
+pub trait BookingTransaction: Send {
+    /// Loads the room and locks it until the end of the transaction (`SELECT ... FOR UPDATE`).
+    /// Concurrent bookings of the same room wait here – the overlap check becomes race-free.
+    async fn lock_room(&mut self, room_id: Uuid) -> RepositoryResult<Option<Room>>;
+
+    /// Serializes concurrent bookings of the same user (for the per-user limit), even when they
+    /// target different rooms.
+    async fn lock_user(&mut self, user_id: Uuid) -> RepositoryResult<()>;
+
+    async fn find_active_overlapping(
+        &mut self,
+        room_id: Uuid,
+        period: &TimeRange,
+    ) -> RepositoryResult<Vec<Booking>>;
+
+    async fn count_active_by_user(
+        &mut self,
+        user_id: Uuid,
+        from: DateTime<Utc>,
+    ) -> RepositoryResult<usize>;
+
+    async fn insert_booking(&mut self, new_booking: NewBooking) -> RepositoryResult<Booking>;
+
+    /// `self: Box<Self>` – consumes the transaction; it can't be used after commit.
+    async fn commit(self: Box<Self>) -> RepositoryResult<()>;
+}

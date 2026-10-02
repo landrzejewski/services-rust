@@ -1,0 +1,15 @@
+@base = http://localhost:3000/api/v1
+@hall = 0199a3f0-0000-7000-8000-000000000003
+
+### Run this request several times in parallel (e.g. the shell loop in 016-transactions.md):
+### exactly one succeeds (201), the others get 409 Conflict.
+POST {{base}}/bookings
+Content-Type: application/json
+
+{"roomId": "{{hall}}", "userId": "0199a3f0-0000-7000-9000-000000000001", "startTime": "2026-10-07T09:00:00Z", "endTime": "2026-10-07T10:00:00Z"}
+
+### Per-user limit (3) is enforced under concurrency as well
+POST {{base}}/bookings
+Content-Type: application/json
+
+{"roomId": "{{hall}}", "userId": "0199a3f0-0000-7000-8000-000000000099", "startTime": "2026-10-08T10:00:00Z", "endTime": "2026-10-08T10:30:00Z"}

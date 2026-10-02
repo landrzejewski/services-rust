@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use chrono::NaiveTime;
-use sqlx::PgPool;
+use sqlx::{PgExecutor, PgPool};
 use uuid::Uuid;
 
 use super::like_pattern;
@@ -187,4 +187,28 @@ impl RoomRepository for PostgresRoomRepository {
             .await?;
         Ok(result.rows_affected() > 0)
     }
+}
+
+/// Loads a room and locks its row until the end of the current transaction (step 016).
+///
+/// `FOR UPDATE` – other transactions trying to lock the same row WAIT until this one commits or
+/// rolls back. Plain reads (without `FOR UPDATE`) are not blocked (MVCC).
+/// Must be called with a transaction executor – outside a transaction the lock is released
+/// immediately after the statement.
+pub(super) async fn select_room_for_update(
+    executor: impl PgExecutor<'_>,
+    id: Uuid,
+) -> RepositoryResult<Option<Room>> {
+    let row = sqlx::query_as!(
+        RoomRow,
+        r#"
+        SELECT id, name, description, capacity, opens_at, closes_at
+        FROM rooms WHERE id = $1
+        FOR UPDATE
+        "#,
+        id
+    )
+    .fetch_optional(executor)
+    .await?;
+    row.map(Room::try_from).transpose()
 }
