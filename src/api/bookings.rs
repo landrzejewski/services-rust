@@ -12,6 +12,7 @@ use uuid::Uuid;
 use crate::{
     api::{
         authentication::AuthUser,
+        authorization::AdminUser,
         dto::{
             bookings::{BookingQuery, BookingResponse, CreateBookingRequest},
             pagination::PageResponse,
@@ -33,8 +34,10 @@ pub fn router() -> Router<AppState> {
         .route("/bookings/{id}/cancel", post(cancel_booking))
 }
 
-// `/bookings?roomId=...&status=ACTIVE`
+// `/bookings?roomId=...&status=ACTIVE` – all users' bookings: administrators only (step 021).
+// Regular users use `/users/me/bookings`.
 async fn list_bookings(
+    _admin: AdminUser,
     State(bookings): State<Arc<BookingService>>,
     Query(query): Query<BookingQuery>,
 ) -> ApiResult<Json<PageResponse<BookingResponse>>> {
@@ -43,11 +46,13 @@ async fn list_bookings(
     Ok(Json(bookings.into()))
 }
 
+// Owner or admin – decided by the domain, which knows the booking's owner.
 async fn get_booking(
     State(bookings): State<Arc<BookingService>>,
+    user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<BookingResponse>> {
-    let booking = bookings.get_booking(id).await?;
+    let booking = bookings.get_booking(id, &(&user).into()).await?;
     Ok(Json(booking.into()))
 }
 
@@ -68,12 +73,12 @@ async fn create_booking(
     ))
 }
 
-// Authentication required; checking that the caller OWNS the booking is authorization – step 021.
+// Authentication (`AuthUser`) + authorization: only the owner or an admin (checked in the domain).
 async fn cancel_booking(
     State(bookings): State<Arc<BookingService>>,
-    _user: AuthUser,
+    user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<BookingResponse>> {
-    let booking = bookings.cancel_booking(id).await?;
+    let booking = bookings.cancel_booking(id, &(&user).into()).await?;
     Ok(Json(booking.into()))
 }

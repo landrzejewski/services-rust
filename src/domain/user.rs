@@ -26,6 +26,26 @@ pub enum Role {
     Admin,
 }
 
+/// Who performs an operation – the domain's view of the authenticated caller (step 021).
+/// Services use it for *resource-based* authorization ("is this the owner?"), which the API layer
+/// can't decide without loading the resource.
+#[derive(Debug, Clone, Copy)]
+pub struct Actor {
+    pub id: Uuid,
+    pub role: Role,
+}
+
+impl Actor {
+    pub fn is_admin(&self) -> bool {
+        self.role == Role::Admin
+    }
+
+    /// Owner or admin.
+    pub fn can_manage(&self, owner_id: Uuid) -> bool {
+        self.is_admin() || self.id == owner_id
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct NewUser {
     pub email: Email,

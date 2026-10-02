@@ -33,6 +33,10 @@ pub enum DomainError {
     #[error("authentication required")]
     Unauthenticated,
 
+    /// Authenticated, but not allowed to perform the operation (step 021) -> 403.
+    #[error("{0}")]
+    Forbidden(String),
+
     /// Unexpected technical failure inside the domain (e.g. hashing) -> 500.
     #[error("internal error: {0}")]
     Internal(String),

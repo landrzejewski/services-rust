@@ -4,13 +4,15 @@ use axum::{
     Router,
     extract::State,
     http::{StatusCode, header},
+    middleware,
     response::IntoResponse,
-    routing::get,
+    routing::{get, post, put},
 };
 use uuid::Uuid;
 
 use crate::{
     api::{
+        authorization::{self, AdminUser},
         dto::{
             bookings::BookingResponse,
             pagination::{PageQuery, PageResponse},
@@ -24,14 +26,30 @@ use crate::{
     domain::{booking::BookingFilter, booking_service::BookingService, room_service::RoomService},
 };
 
-pub fn router() -> Router<AppState> {
-    Router::new()
+// Step 021: the router takes the state VALUE because the admin guard middleware needs it
+// (`from_fn_with_state`) to run the `AuthUser` extractor.
+pub fn router(state: &AppState) -> Router<AppState> {
+    // Public: anyone may browse rooms.
+    let public = Router::new()
+        .route("/rooms", get(list_rooms))
+        .route("/rooms/{id}", get(get_room));
+
+    // Admin only: managing rooms.
+    // `route_layer` (not `layer`) applies the middleware only to routes that MATCH – requests to
+    // unknown paths still get 404 instead of 401/403.
+    let admin = Router::new()
         // Several methods on one path: chain `MethodRouter`s (`get(..).post(..)`).
-        .route("/rooms", get(list_rooms).post(create_room))
-        .route(
-            "/rooms/{id}",
-            get(get_room).put(update_room).delete(delete_room),
-        )
+        .route("/rooms", post(create_room))
+        .route("/rooms/{id}", put(update_room).delete(delete_room))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            authorization::require_admin,
+        ));
+
+    // `merge` combines method routers of the same path: GET from `public`, POST from `admin`.
+    public
+        .merge(admin)
+        // Extractor-based guard inside the handler (`AdminUser`).
         .route("/rooms/{id}/bookings", get(list_room_bookings))
 }
 
@@ -118,7 +136,9 @@ async fn delete_room(
 
 // Sub-resource: bookings belonging to one room. Reuses the booking service with a fixed filter.
 // Several `State` extractors with different sub-states can be combined.
+// Bookings contain user ids -> administrators only (`AdminUser` extractor, step 021).
 async fn list_room_bookings(
+    _admin: AdminUser,
     State(rooms): State<Arc<RoomService>>,
     State(bookings): State<Arc<BookingService>>,
     Path(id): Path<Uuid>,

@@ -83,6 +83,11 @@ impl IntoResponse for ApiError {
                 "Authentication required",
             )
             .with_detail("missing or invalid credentials"),
+            // 403 – "I know who you are, but you may not do this." Re-authenticating won't help.
+            ApiError::Domain(DomainError::Forbidden(message)) => {
+                ProblemDetails::new(StatusCode::FORBIDDEN, "forbidden", "Forbidden")
+                    .with_detail(message.clone())
+            }
             // Infrastructure failure: generic message for the client, details only in the logs.
             ApiError::Domain(DomainError::Repository(_) | DomainError::Internal(_)) => {
                 ProblemDetails::new(

@@ -3,15 +3,15 @@
 //! Handlers are thin adapters: extract input from the request, call a domain service,
 //! convert the result into an HTTP response. No business rules here.
 //!
-//! URL structure (step 006):
+//! URL structure (step 006) and access rules (step 021):
 //! ```text
-//! /health                         technical endpoint, not versioned
-//! /api/v1/rooms                   GET (list, filters), POST (create)
-//! /api/v1/rooms/{id}              GET, PUT, DELETE
-//! /api/v1/rooms/{id}/bookings     GET – bookings of one room (sub-resource)
-//! /api/v1/bookings                GET (list, filters), POST (create)
-//! /api/v1/bookings/{id}           GET
-//! /api/v1/bookings/{id}/cancel    POST – state transition (action)
+//! /health                         technical endpoint, not versioned          public
+//! /api/v1/rooms                   GET (list, filters) | POST (create)         public | ADMIN
+//! /api/v1/rooms/{id}              GET | PUT, DELETE                           public | ADMIN
+//! /api/v1/rooms/{id}/bookings     GET – bookings of one room (sub-resource)   ADMIN
+//! /api/v1/bookings                GET (list, filters) | POST (create)         ADMIN | authenticated
+//! /api/v1/bookings/{id}           GET                                         owner or ADMIN
+//! /api/v1/bookings/{id}/cancel    POST – state transition (action)            owner or ADMIN
 //! /api/v1/auth/register           POST – create account (public)
 //! /api/v1/auth/login              POST – check credentials (public; tokens from step 019)
 //! /api/v1/users/me                GET  – current user (authenticated)
@@ -20,6 +20,7 @@
 
 mod auth;
 pub mod authentication;
+pub mod authorization;
 mod bookings;
 pub mod dto;
 pub mod error;
@@ -38,7 +39,7 @@ use crate::{api::error::ApiError, app::AppState};
 pub fn router(state: AppState) -> Router {
     // Routers of one API version merged together...
     let api_v1 = Router::new()
-        .merge(rooms::router())
+        .merge(rooms::router(&state))
         .merge(bookings::router())
         .merge(auth::router());
 

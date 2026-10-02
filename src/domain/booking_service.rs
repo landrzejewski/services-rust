@@ -26,6 +26,7 @@ use crate::domain::{
     pagination::{Page, PageRequest},
     repositories::{BookingRepository, BookingTransaction, BookingUnitOfWork},
     room::Room,
+    user::Actor,
     validation::InvalidValue,
 };
 
@@ -162,11 +163,31 @@ impl BookingService {
         Ok(())
     }
 
-    pub async fn get_booking(&self, id: Uuid) -> DomainResult<Booking> {
+    /// Owner or admin only (step 021).
+    pub async fn get_booking(&self, id: Uuid, actor: &Actor) -> DomainResult<Booking> {
+        let booking = self.find_booking(id).await?;
+        Self::ensure_can_manage(actor, &booking)?;
+        Ok(booking)
+    }
+
+    async fn find_booking(&self, id: Uuid) -> DomainResult<Booking> {
         self.bookings
             .find_by_id(id)
             .await?
             .ok_or_else(|| DomainError::booking_not_found(id))
+    }
+
+    // Resource-based authorization: the decision needs the loaded booking (its owner), so it
+    // belongs to the domain, not to a route guard. 403 reveals that the booking exists;
+    // returning 404 instead would hide it (a valid choice for sensitive resources).
+    fn ensure_can_manage(actor: &Actor, booking: &Booking) -> DomainResult<()> {
+        if actor.can_manage(booking.user_id) {
+            Ok(())
+        } else {
+            Err(DomainError::Forbidden(
+                "only the owner or an administrator may access this booking".to_string(),
+            ))
+        }
     }
 
     pub async fn list_bookings(
@@ -179,8 +200,8 @@ impl BookingService {
 
     /// Cancellation keeps the record (history) and only changes its status.
     /// Typical flow of a state change: load -> call behaviour on the entity -> persist.
-    pub async fn cancel_booking(&self, id: Uuid) -> DomainResult<Booking> {
-        let mut booking = self.get_booking(id).await?;
+    pub async fn cancel_booking(&self, id: Uuid, actor: &Actor) -> DomainResult<Booking> {
+        let mut booking = self.get_booking(id, actor).await?;
         booking.cancel(self.clock.now())?;
         self.bookings
             .update_status(id, booking.status)
@@ -200,6 +221,7 @@ mod tests {
             repositories::RoomRepository,
             room::{NewRoom, OpeningHours, RoomName},
             time_range::TimeRange,
+            user::Role,
         },
         // Tests reuse the in-memory adapters as lightweight fakes.
         infrastructure::memory::{
@@ -348,13 +370,40 @@ mod tests {
             .await
             .unwrap();
 
-        service.cancel_booking(first.id).await.unwrap();
-        let again = service.cancel_booking(first.id).await;
+        let owner = Actor {
+            id: first.user_id,
+            role: Role::User,
+        };
+        service.cancel_booking(first.id, &owner).await.unwrap();
+        let again = service.cancel_booking(first.id, &owner).await;
         let same_slot = service
             .create_booking(booking(room, Uuid::now_v7(), 9, 10, 1))
             .await;
 
         assert!(matches!(again, Err(DomainError::Conflict(_))));
         assert!(same_slot.is_ok());
+    }
+
+    #[tokio::test]
+    async fn only_owner_or_admin_can_cancel() {
+        let (service, room) = setup().await;
+        let booking = service
+            .create_booking(booking(room, Uuid::now_v7(), 9, 10, 1))
+            .await
+            .unwrap();
+        let stranger = Actor {
+            id: Uuid::now_v7(),
+            role: Role::User,
+        };
+        let admin = Actor {
+            id: Uuid::now_v7(),
+            role: Role::Admin,
+        };
+
+        let by_stranger = service.cancel_booking(booking.id, &stranger).await;
+        let by_admin = service.cancel_booking(booking.id, &admin).await;
+
+        assert!(matches!(by_stranger, Err(DomainError::Forbidden(_))));
+        assert!(by_admin.is_ok());
     }
 }

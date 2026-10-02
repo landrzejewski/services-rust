@@ -1,0 +1,59 @@
+@base = http://localhost:3000/api/v1
+
+### USER token
+# @name user
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{"email": "user@booking.local", "password": "user-password-123"}
+
+### ADMIN token
+# @name admin
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{"email": "admin@booking.local", "password": "admin-password-123"}
+
+### Anonymous: managing rooms -> 401
+POST {{base}}/rooms
+Content-Type: application/json
+
+{"name": "Guarded room", "capacity": 2}
+
+### USER: managing rooms -> 403
+POST {{base}}/rooms
+Authorization: Bearer {{user.response.body.accessToken}}
+Content-Type: application/json
+
+{"name": "Guarded room", "capacity": 2}
+
+### ADMIN: managing rooms -> 201
+POST {{base}}/rooms
+Authorization: Bearer {{admin.response.body.accessToken}}
+Content-Type: application/json
+
+{"name": "Guarded room", "capacity": 2}
+
+### USER: all bookings -> 403
+GET {{base}}/bookings
+Authorization: Bearer {{user.response.body.accessToken}}
+
+### ADMIN: all bookings -> 200
+GET {{base}}/bookings
+Authorization: Bearer {{admin.response.body.accessToken}}
+
+### USER creates a booking
+# @name booking
+POST {{base}}/bookings
+Authorization: Bearer {{user.response.body.accessToken}}
+Content-Type: application/json
+
+{"roomId": "0199a3f0-0000-7000-8000-000000000003", "startTime": "2026-10-13T09:00:00Z", "endTime": "2026-10-13T10:00:00Z"}
+
+### Owner reads it -> 200
+GET {{base}}/bookings/{{booking.response.body.id}}
+Authorization: Bearer {{user.response.body.accessToken}}
+
+### ADMIN cancels it -> 200
+POST {{base}}/bookings/{{booking.response.body.id}}/cancel
+Authorization: Bearer {{admin.response.body.accessToken}}
