@@ -79,6 +79,8 @@ impl AuthService {
 
     /// Verifies credentials. Every failure – unknown e-mail, wrong password, account without a
     /// local password – produces the SAME error, so an attacker can't tell which part was wrong.
+    // The password is skipped – never record secrets in spans or logs.
+    #[tracing::instrument(skip(self, password), err(level = "info", Display))]
     pub async fn authenticate(&self, email: &str, password: &SecretString) -> DomainResult<User> {
         let user = match Email::parse(email) {
             Ok(email) => self.users.find_by_email(&email).await?,

@@ -1,0 +1,17 @@
+@base = http://localhost:3000
+
+### Prometheus metrics (text exposition format)
+GET {{base}}/metrics
+
+### Request continuing an existing trace (W3C Trace Context) – find it in Jaeger by trace id
+GET {{base}}/api/v1/rooms
+traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+
+### Generates a 404 -> api_problems_total{type="not-found"}
+GET {{base}}/api/v1/rooms/0199a3f0-0000-7000-8000-00000000ffff
+
+### Jaeger API – the trace above
+GET http://localhost:16686/api/traces/4bf92f3577b34da6a3ce929d0e0e4736
+
+### Prometheus query API – request rate per path
+GET http://localhost:9090/api/v1/query?query=sum%20by%20(path)%20(rate(http_requests_total%5B1m%5D))

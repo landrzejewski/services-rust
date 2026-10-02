@@ -4,3 +4,6 @@
 # Inside a container the server must listen on all interfaces.
 host = "0.0.0.0"
 shutdown_grace_period_secs = 25
+
+[telemetry]
+log_format = "json"

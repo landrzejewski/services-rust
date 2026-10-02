@@ -54,6 +54,17 @@ impl BookingService {
         }
     }
 
+    // `#[instrument]` (step 023) wraps the function in a span: every log line inside carries
+    // these fields, and with OpenTelemetry the span appears in the trace (with its duration).
+    // - `skip(...)` – don't record arguments automatically (big / sensitive / no `Debug`),
+    // - `fields(...)` – record selected values explicitly,
+    // - `err(level = "info", Display)` – log the error when the function returns `Err`; default
+    //   level is ERROR, too loud for expected business outcomes (conflicts, rule violations).
+    #[tracing::instrument(
+        skip(self, new_booking),
+        fields(room_id = %new_booking.room_id, user_id = %new_booking.user_id),
+        err(level = "info", Display)
+    )]
     pub async fn create_booking(&self, new_booking: NewBooking) -> DomainResult<Booking> {
         // BEGIN. From now on every `?` that returns early drops `tx` -> ROLLBACK.
         let mut tx = self.unit_of_work.begin().await?;
@@ -200,6 +211,7 @@ impl BookingService {
 
     /// Cancellation keeps the record (history) and only changes its status.
     /// Typical flow of a state change: load -> call behaviour on the entity -> persist.
+    #[tracing::instrument(skip(self, actor), fields(actor_id = %actor.id), err(level = "info", Display))]
     pub async fn cancel_booking(&self, id: Uuid, actor: &Actor) -> DomainResult<Booking> {
         let mut booking = self.get_booking(id, actor).await?;
         booking.cancel(self.clock.now())?;

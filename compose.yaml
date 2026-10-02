@@ -47,5 +47,25 @@ services:
       timeout: 5s
       retries: 20
 
+  # Jaeger – stores and visualizes traces (step 023). Receives OTLP on 4317 (gRPC) / 4318 (HTTP).
+  # UI: http://localhost:16686
+  jaeger:
+    image: jaegertracing/jaeger:2.21.0
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+
+  # Prometheus – scrapes and stores metrics (step 023). UI: http://localhost:9090
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    extra_hosts:
+      # Makes host.docker.internal work on Linux as well.
+      - "host.docker.internal:host-gateway"
+
 volumes:
   postgres-data:

@@ -66,6 +66,8 @@ async fn create_booking(
     let booking = bookings
         .create_booking(request.into_new_booking(user.id)?)
         .await?;
+    // Business metric (step 023) – technical metrics alone don't show how the product is used.
+    metrics::counter!("bookings_created_total").increment(1);
     Ok((
         StatusCode::CREATED,
         [(header::LOCATION, format!("/api/v1/bookings/{}", booking.id))],

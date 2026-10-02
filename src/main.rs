@@ -40,7 +40,9 @@ fn main() -> anyhow::Result<()> {
     // Fail fast: an invalid configuration should stop the process immediately with a clear message.
     let settings = Settings::load().context("failed to load configuration")?;
 
-    telemetry::init_tracing();
+    // Logs (+ optional trace export) and the metrics recorder (step 023).
+    let telemetry = telemetry::init(&settings.telemetry)?;
+    telemetry::init_metrics()?;
     tracing::debug!(?settings, "configuration loaded");
 
     let mut builder = tokio::runtime::Builder::new_multi_thread();
@@ -61,5 +63,9 @@ fn main() -> anyhow::Result<()> {
 
     // `block_on` runs the future on the current (main) thread until it completes.
     // Everything spawned inside it runs on the worker threads.
-    runtime.block_on(server::run(settings))
+    let result = runtime.block_on(server::run(settings));
+
+    // Flush buffered spans before the process exits, otherwise the last traces are lost.
+    telemetry.shutdown();
+    result
 }

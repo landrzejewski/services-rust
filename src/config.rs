@@ -25,6 +25,7 @@ pub struct Settings {
     pub storage: StorageSettings,
     pub auth: AuthSettings,
     pub oidc: OidcSettings,
+    pub telemetry: TelemetrySettings,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -138,6 +139,26 @@ pub struct OidcSettings {
     pub discovery_url: Option<String>,
     /// Minimum time between two JWKS downloads (protection against floods of unknown `kid`s).
     pub jwks_min_refresh_secs: u64,
+}
+
+/// Logs, traces and metrics (step 023).
+#[derive(Debug, Clone, Deserialize)]
+pub struct TelemetrySettings {
+    /// `service.name` attached to exported traces.
+    pub service_name: String,
+    pub log_format: LogFormat,
+    /// OTLP/HTTP endpoint of a trace collector (Jaeger, OpenTelemetry Collector, Tempo...),
+    /// e.g. `http://localhost:4318`. Absent = no trace export.
+    pub otlp_endpoint: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LogFormat {
+    /// Human-readable, colored – local development.
+    Pretty,
+    /// One JSON object per line – production (log shippers parse it without regexes).
+    Json,
 }
 
 impl ServerSettings {

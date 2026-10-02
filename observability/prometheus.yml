@@ -1,0 +1,13 @@
+# Prometheus configuration (step 023). Prometheus PULLS metrics: every `scrape_interval` it
+# requests GET /metrics from each target and stores the samples as time series.
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: room-booking-service
+    metrics_path: /metrics
+    static_configs:
+      # The application runs on the host (`cargo run`); from inside a container the host is
+      # reachable as host.docker.internal (Docker Desktop; on Linux see `extra_hosts` in compose).
+      # Step 024 adds the containerized app as `app:3000`.
+      - targets: ["host.docker.internal:3000"]

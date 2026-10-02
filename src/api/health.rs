@@ -19,6 +19,17 @@ pub fn router() -> Router<AppState> {
         .route("/health", get(live))
         .route("/health/live", get(live))
         .route("/health/ready", get(ready))
+        // Prometheus scrapes this endpoint (pull model). In production expose it only internally
+        // (separate port / network policy) – it reveals traffic details.
+        .route("/metrics", get(metrics))
+}
+
+async fn metrics() -> (StatusCode, String) {
+    match crate::telemetry::metrics_handle() {
+        // Text exposition format: `http_requests_total{method="GET",path="/api/v1/rooms",status="200"} 42`
+        Some(handle) => (StatusCode::OK, handle.render()),
+        None => (StatusCode::NOT_FOUND, "metrics not enabled".to_string()),
+    }
 }
 
 // `#[derive(Serialize)]` (serde) generates code converting the struct to JSON.

@@ -30,6 +30,7 @@ use tower_http::{
     trace::{DefaultOnResponse, TraceLayer},
 };
 use tracing::Level;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::{api::problem::ProblemDetails, config::HttpSettings};
 
@@ -63,12 +64,20 @@ pub fn apply(router: Router, settings: &HttpSettings) -> Router {
                         .get(&REQUEST_ID)
                         .and_then(|value| value.to_str().ok())
                         .unwrap_or("-");
-                    tracing::info_span!(
+                    let span = tracing::info_span!(
                         "http",
                         method = %request.method(),
                         uri = %request.uri(),
                         request_id,
-                    )
+                    );
+                    // Distributed tracing (step 023): if the caller sent a W3C `traceparent`
+                    // header, this request's span becomes a child of the caller's span – one
+                    // trace across services. Without the header a new trace starts.
+                    let parent = opentelemetry::global::get_text_map_propagator(|propagator| {
+                        propagator.extract(&opentelemetry_http::HeaderExtractor(request.headers()))
+                    });
+                    let _ = span.set_parent(parent);
+                    span
                 })
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
@@ -217,6 +226,32 @@ async fn enrich_problem_details(request: Request, next: Next) -> Response {
     // The body length changed – drop the stale header (hyper computes it again).
     parts.headers.remove(header::CONTENT_LENGTH);
     Response::from_parts(parts, Body::from(problem.to_string()))
+}
+
+/// RED metrics (Rate, Errors, Duration) per endpoint (step 023).
+///
+/// Installed with `route_layer` in `api::router`: it runs after routing, so `MatchedPath`
+/// (the route template `/api/v1/rooms/{id}`) is available. Using the raw URI would create a
+/// separate time series per room id – unbounded label cardinality kills Prometheus.
+pub async fn track_metrics(request: Request, next: Next) -> Response {
+    let started = Instant::now();
+    let path = request
+        .extensions()
+        .get::<axum::extract::MatchedPath>()
+        .map_or_else(|| "unmatched".to_string(), |path| path.as_str().to_string());
+    let method = request.method().to_string();
+
+    let response = next.run(request).await;
+
+    let labels = [
+        ("method", method),
+        ("path", path),
+        ("status", response.status().as_u16().to_string()),
+    ];
+    metrics::counter!("http_requests_total", &labels).increment(1);
+    metrics::histogram!("http_request_duration_seconds", &labels)
+        .record(started.elapsed().as_secs_f64());
+    response
 }
 
 // `map_response` – transform only the response.

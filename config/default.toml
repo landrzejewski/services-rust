@@ -44,3 +44,8 @@ enabled = true
 issuer = "http://localhost:8180/realms/room-booking"
 audience = "room-booking-api"
 jwks_min_refresh_secs = 60
+
+[telemetry]
+service_name = "room-booking-service"
+log_format = "pretty"
+# otlp_endpoint = "http://localhost:4318"   # export traces (compose service `jaeger`)

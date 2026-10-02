@@ -5,7 +5,7 @@ use std::time::Duration;
 use anyhow::Context;
 use tokio_util::sync::CancellationToken;
 
-use crate::{app, config::Settings};
+use crate::{app, config::Settings, telemetry};
 
 // The async entry point of the application – exactly what `#[tokio::main] async fn main` used to contain.
 // Returns `anyhow::Result` since step 014: startup can fail (database unreachable, port in use).
@@ -16,6 +16,10 @@ pub async fn run(settings: Settings) -> anyhow::Result<()> {
 
     // Composition root builds the whole object graph and returns a ready `Router`.
     let (state, router) = app::build(&settings).await?;
+
+    // Background task (pattern from steps 002/004): the Prometheus recorder needs periodic
+    // upkeep (draining histogram buffers). Stops on shutdown via the cancellation token.
+    let upkeep = tokio::spawn(metrics_upkeep(shutdown.clone()));
 
     let addr = settings
         .server
@@ -65,6 +69,10 @@ pub async fn run(settings: Settings) -> anyhow::Result<()> {
         }
     }
 
+    if let Err(error) = upkeep.await {
+        tracing::error!(%error, "metrics upkeep task failed");
+    }
+
     // Close the pool gracefully: waits for borrowed connections to be returned, then sends
     // a proper termination message to PostgreSQL for each connection.
     state.db.close().await;
@@ -101,4 +109,17 @@ async fn shutdown_signal(token: CancellationToken) {
 
     // Notify background tasks and the grace period timer in `run`.
     token.cancel();
+}
+
+async fn metrics_upkeep(shutdown: CancellationToken) {
+    let Some(handle) = telemetry::metrics_handle() else {
+        return;
+    };
+    let mut interval = tokio::time::interval(Duration::from_secs(5));
+    loop {
+        tokio::select! {
+            _ = interval.tick() => handle.run_upkeep(),
+            _ = shutdown.cancelled() => return,
+        }
+    }
 }

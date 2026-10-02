@@ -135,6 +135,12 @@ impl IntoResponse for ApiError {
         // Client errors are logged at `debug` – they are expected and can be noisy.
         // Server errors (5xx) are logged at `error` with full details (`?self` = Debug, includes
         // the source chain), while the client gets only a generic message.
+        // Error rate by problem type (step 023), e.g. spikes of `conflict` or `invalid-token`.
+        metrics::counter!(
+            "api_problems_total",
+            "type" => problem.problem_type.trim_start_matches("/problems/").to_string()
+        )
+        .increment(1);
         if problem.status >= 500 {
             tracing::error!(error = ?self, status = problem.status, "request failed");
         } else {

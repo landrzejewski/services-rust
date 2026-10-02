@@ -49,6 +49,8 @@ pub fn router(state: AppState) -> Router {
         // so `rooms::router()` defines `/rooms`, which becomes reachable at `/api/v1/rooms`.
         // A new incompatible API version can be added as `nest("/api/v2", ...)` side by side.
         .nest("/api/v1", api_v1)
+        // Metrics only for matched routes (step 023, see `middleware::track_metrics`).
+        .route_layer(axum::middleware::from_fn(middleware::track_metrics))
         // Called when no route matches the path (default: empty 404).
         .fallback(not_found)
         // Called when the path matches but the method does not (default: empty 405).
