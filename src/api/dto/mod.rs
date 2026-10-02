@@ -14,4 +14,5 @@
 //! - input contains only what clients may set (no `id`, `status`, `createdAt` in requests).
 
 pub mod bookings;
+pub mod pagination;
 pub mod rooms;

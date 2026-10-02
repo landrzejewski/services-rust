@@ -13,6 +13,7 @@ use crate::{
     api::{
         dto::{
             bookings::BookingResponse,
+            pagination::{PageQuery, PageResponse},
             rooms::{RoomQuery, RoomRequest, RoomResponse},
         },
         error::ApiResult,
@@ -51,11 +52,12 @@ pub fn router() -> Router<AppState> {
 async fn list_rooms(
     State(rooms): State<Arc<RoomService>>,
     Query(query): Query<RoomQuery>,
-) -> ApiResult<Json<Vec<RoomResponse>>> {
-    let rooms = rooms.list_rooms(&query.into()).await?;
-    // `into_iter().map(From::from).collect()` converts every element; the target type
-    // `Vec<RoomResponse>` is inferred from the function's return type.
-    Ok(Json(rooms.into_iter().map(RoomResponse::from).collect()))
+) -> ApiResult<Json<PageResponse<RoomResponse>>> {
+    let (filter, page) = query.into_domain()?;
+    let rooms = rooms.list_rooms(&filter, page).await?;
+    // `Page<Room>` -> `PageResponse<RoomResponse>` through the generic `From` impl;
+    // the target type is inferred from the function's return type.
+    Ok(Json(rooms.into()))
 }
 
 // `Path<Uuid>` is an *extractor*: Axum parses the `{id}` segment into `Uuid` (any type
@@ -120,7 +122,8 @@ async fn list_room_bookings(
     State(rooms): State<Arc<RoomService>>,
     State(bookings): State<Arc<BookingService>>,
     Path(id): Path<Uuid>,
-) -> ApiResult<Json<Vec<BookingResponse>>> {
+    Query(page): Query<PageQuery>,
+) -> ApiResult<Json<PageResponse<BookingResponse>>> {
     // 404 for an unknown room instead of an empty list.
     rooms.get_room(id).await?;
     let filter = BookingFilter {
@@ -128,8 +131,6 @@ async fn list_room_bookings(
         // Struct update syntax: remaining fields from `Default` (all `None`).
         ..Default::default()
     };
-    let bookings = bookings.list_bookings(&filter).await?;
-    Ok(Json(
-        bookings.into_iter().map(BookingResponse::from).collect(),
-    ))
+    let bookings = bookings.list_bookings(&filter, page.try_into()?).await?;
+    Ok(Json(bookings.into()))
 }

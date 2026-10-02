@@ -20,6 +20,7 @@ use crate::domain::{
     booking_policy::BookingPolicy,
     clock::Clock,
     error::{DomainError, DomainResult},
+    pagination::{Page, PageRequest},
     repositories::{BookingRepository, RoomRepository},
     room::Room,
     validation::InvalidValue,
@@ -149,8 +150,12 @@ impl BookingService {
             .ok_or_else(|| DomainError::booking_not_found(id))
     }
 
-    pub async fn list_bookings(&self, filter: &BookingFilter) -> DomainResult<Vec<Booking>> {
-        Ok(self.bookings.find(filter).await?)
+    pub async fn list_bookings(
+        &self,
+        filter: &BookingFilter,
+        page: PageRequest,
+    ) -> DomainResult<Page<Booking>> {
+        Ok(self.bookings.find(filter, page).await?)
     }
 
     /// Cancellation keeps the record (history) and only changes its status.

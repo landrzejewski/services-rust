@@ -1,0 +1,93 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO rooms (id, name, description, capacity, opens_at, closes_at)\n            VALUES ($1, $2, $3, $4, $5, $6)\n            RETURNING id, name, description, capacity, opens_at, closes_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "rooms",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "rooms",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "rooms",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "capacity",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "rooms",
+            "name": "capacity"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "opens_at",
+        "type_info": "Time",
+        "origin": {
+          "Table": {
+            "table": "rooms",
+            "name": "opens_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "closes_at",
+        "type_info": "Time",
+        "origin": {
+          "Table": {
+            "table": "rooms",
+            "name": "closes_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Int4",
+        "Time",
+        "Time"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "58608c4e4aa8c5cd867b5bc22a09fe455b9577920fed4cd9f5cd92883d69dbd6"
+}

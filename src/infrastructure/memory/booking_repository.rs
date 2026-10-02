@@ -7,6 +7,7 @@ use async_trait::async_trait;
 
 use crate::domain::{
     booking::{Booking, BookingFilter, BookingStatus, NewBooking},
+    pagination::{Page, PageRequest},
     repositories::{BookingRepository, RepositoryResult},
     time_range::TimeRange,
 };
@@ -52,7 +53,11 @@ impl BookingRepository for InMemoryBookingRepository {
             .cloned())
     }
 
-    async fn find(&self, filter: &BookingFilter) -> RepositoryResult<Vec<Booking>> {
+    async fn find(
+        &self,
+        filter: &BookingFilter,
+        page: PageRequest,
+    ) -> RepositoryResult<Page<Booking>> {
         let bookings = self.bookings.read().expect("bookings lock poisoned");
         let mut result: Vec<Booking> = bookings
             .values()
@@ -60,7 +65,7 @@ impl BookingRepository for InMemoryBookingRepository {
             .cloned()
             .collect();
         result.sort_by_key(|booking| booking.period.start());
-        Ok(result)
+        Ok(super::room_repository::paginate(result, page))
     }
 
     async fn update_status(

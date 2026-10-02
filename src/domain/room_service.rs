@@ -7,6 +7,7 @@ use uuid::Uuid;
 use crate::domain::{
     clock::Clock,
     error::{DomainError, DomainResult},
+    pagination::{Page, PageRequest},
     repositories::{BookingRepository, RoomRepository},
     room::{NewRoom, Room, RoomFilter},
 };
@@ -39,9 +40,13 @@ impl RoomService {
         }
     }
 
-    // `?` converts `RepositoryError` into `DomainError::Repository` (`#[from]`).
-    pub async fn list_rooms(&self, filter: &RoomFilter) -> DomainResult<Vec<Room>> {
-        Ok(self.repository.find(filter).await?)
+    // `?` converts `RepositoryError` into `DomainError` (`From` impl in `domain::error`).
+    pub async fn list_rooms(
+        &self,
+        filter: &RoomFilter,
+        page: PageRequest,
+    ) -> DomainResult<Page<Room>> {
+        Ok(self.repository.find(filter, page).await?)
     }
 
     pub async fn get_room(&self, id: Uuid) -> DomainResult<Room> {
@@ -101,7 +106,7 @@ mod tests {
     struct FailingRepository;
 
     fn failure() -> RepositoryError {
-        RepositoryError {
+        RepositoryError::Unexpected {
             message: "connection lost".into(),
             source: None,
         }
@@ -109,7 +114,7 @@ mod tests {
 
     #[async_trait]
     impl RoomRepository for FailingRepository {
-        async fn find(&self, _: &RoomFilter) -> RepositoryResult<Vec<Room>> {
+        async fn find(&self, _: &RoomFilter, _: PageRequest) -> RepositoryResult<Page<Room>> {
             Err(failure())
         }
         async fn find_by_id(&self, _: Uuid) -> RepositoryResult<Option<Room>> {

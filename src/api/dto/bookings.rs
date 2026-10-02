@@ -3,10 +3,14 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::{Validate, ValidationError};
 
-use crate::domain::{
-    booking::{Booking, BookingFilter, BookingStatus, NewBooking},
-    time_range::TimeRange,
-    validation::InvalidValue,
+use crate::{
+    api::dto::pagination::page_request,
+    domain::{
+        booking::{Booking, BookingFilter, BookingStatus, NewBooking},
+        pagination::PageRequest,
+        time_range::TimeRange,
+        validation::InvalidValue,
+    },
 };
 
 /// Body of `POST /bookings`.
@@ -93,16 +97,20 @@ pub struct BookingQuery {
     pub room_id: Option<Uuid>,
     pub user_id: Option<Uuid>,
     pub status: Option<BookingStatusDto>,
+    pub page: Option<u32>,
+    pub size: Option<u32>,
 }
 
-impl From<BookingQuery> for BookingFilter {
-    fn from(query: BookingQuery) -> Self {
-        Self {
-            room_id: query.room_id,
-            user_id: query.user_id,
+impl BookingQuery {
+    pub fn into_domain(self) -> Result<(BookingFilter, PageRequest), InvalidValue> {
+        let page = page_request(self.page, self.size)?;
+        let filter = BookingFilter {
+            room_id: self.room_id,
+            user_id: self.user_id,
             // `Option::map(Into::into)` converts the inner value when present.
-            status: query.status.map(Into::into),
-        }
+            status: self.status.map(Into::into),
+        };
+        Ok((filter, page))
     }
 }
 

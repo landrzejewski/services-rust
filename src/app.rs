@@ -20,10 +20,7 @@ use crate::{
         repositories::{BookingRepository, RoomRepository},
         room_service::RoomService,
     },
-    infrastructure::{
-        memory::{InMemoryBookingRepository, InMemoryRoomRepository},
-        postgres,
-    },
+    infrastructure::postgres::{self, PostgresBookingRepository, PostgresRoomRepository},
 };
 
 // Application state shared by all handlers.
@@ -56,12 +53,13 @@ pub async fn build_state(settings: &Settings) -> anyhow::Result<AppState> {
     }
 
     // The concrete implementation is chosen here and only here. Switching to PostgreSQL
-    // (step 015) changes these lines – services and handlers stay untouched.
-    // Repositories are still in-memory in this step; only the pool + migrations are set up.
+    // (step 015) changed only these lines – services and handlers stayed untouched.
     // Type annotation `Arc<dyn Trait>` performs the *unsizing coercion* from the concrete type.
+    // In-memory repositories remain available for tests.
     let room_repository: Arc<dyn RoomRepository> =
-        Arc::new(InMemoryRoomRepository::with_sample_data());
-    let booking_repository: Arc<dyn BookingRepository> = Arc::new(InMemoryBookingRepository::new());
+        Arc::new(PostgresRoomRepository::new(db.clone()));
+    let booking_repository: Arc<dyn BookingRepository> =
+        Arc::new(PostgresBookingRepository::new(db.clone()));
 
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
 

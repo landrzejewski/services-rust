@@ -8,6 +8,7 @@ pub mod booking_policy;
 pub mod booking_service;
 pub mod clock;
 pub mod error;
+pub mod pagination;
 pub mod repositories;
 pub mod room;
 pub mod room_service;

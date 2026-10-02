@@ -4,8 +4,9 @@ use uuid::Uuid;
 use validator::{Validate, ValidationError};
 
 use crate::{
-    api::serde_formats::hh_mm,
+    api::{dto::pagination::page_request, serde_formats::hh_mm},
     domain::{
+        pagination::PageRequest,
         room::{NewRoom, OpeningHours, Room, RoomFilter, RoomName},
         validation::InvalidValue,
     },
@@ -81,20 +82,25 @@ impl TryFrom<RoomRequest> for NewRoom {
     }
 }
 
-/// Query string of `GET /rooms`: `?minCapacity=5&name=blue`.
+/// Query string of `GET /rooms`: `?minCapacity=5&name=blue&page=1&size=20`.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RoomQuery {
     pub min_capacity: Option<u32>,
     pub name: Option<String>,
+    pub page: Option<u32>,
+    pub size: Option<u32>,
 }
 
-impl From<RoomQuery> for RoomFilter {
-    fn from(query: RoomQuery) -> Self {
-        Self {
-            min_capacity: query.min_capacity,
-            name: query.name,
-        }
+impl RoomQuery {
+    /// Splits the query into the domain filter and the page request (step 015).
+    pub fn into_domain(self) -> Result<(RoomFilter, PageRequest), InvalidValue> {
+        let page = page_request(self.page, self.size)?;
+        let filter = RoomFilter {
+            min_capacity: self.min_capacity,
+            name: self.name,
+        };
+        Ok((filter, page))
     }
 }
 

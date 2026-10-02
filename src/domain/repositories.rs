@@ -16,22 +16,43 @@ use uuid::Uuid;
 
 use crate::domain::{
     booking::{Booking, BookingFilter, BookingStatus, NewBooking},
+    pagination::{Page, PageRequest},
     room::{NewRoom, Room, RoomFilter},
     time_range::TimeRange,
 };
 
-/// Storage failure (connection lost, timeout, constraint the domain didn't expect...).
+/// Storage failure.
 ///
 /// The trait must express that any implementation can fail, even if the in-memory one never
-/// does. The source error is kept (boxed) for logging, but the domain doesn't depend on
-/// driver-specific error types like `sqlx::Error`.
+/// does. The domain doesn't depend on driver-specific error types like `sqlx::Error`; adapters
+/// translate them into these variants (step 015).
 #[derive(Debug, thiserror::Error)]
-#[error("repository error: {message}")]
-pub struct RepositoryError {
-    pub message: String,
-    // `#[source]` – exposed via `Error::source()`, so loggers can print the whole chain.
-    #[source]
-    pub source: Option<Box<dyn std::error::Error + Send + Sync>>,
+pub enum RepositoryError {
+    /// The storage rejected the change because it conflicts with existing data
+    /// (unique / exclusion constraint). Meaningful to the domain -> `DomainError::Conflict`.
+    #[error("{0}")]
+    Conflict(String),
+
+    /// Anything else: connection lost, timeout, corrupted data... -> HTTP 500.
+    #[error("repository error: {message}")]
+    Unexpected {
+        message: String,
+        // `#[source]` – exposed via `Error::source()`, so loggers can print the whole chain.
+        #[source]
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    },
+}
+
+impl RepositoryError {
+    pub fn unexpected(
+        message: impl Into<String>,
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
+        Self::Unexpected {
+            message: message.into(),
+            source: Some(Box::new(source)),
+        }
+    }
 }
 
 pub type RepositoryResult<T> = Result<T, RepositoryError>;
@@ -46,7 +67,7 @@ pub type RepositoryResult<T> = Result<T, RepositoryError>;
 // spawned tasks (handlers), so every implementation must be thread-safe.
 #[async_trait]
 pub trait RoomRepository: Send + Sync {
-    async fn find(&self, filter: &RoomFilter) -> RepositoryResult<Vec<Room>>;
+    async fn find(&self, filter: &RoomFilter, page: PageRequest) -> RepositoryResult<Page<Room>>;
     async fn find_by_id(&self, id: Uuid) -> RepositoryResult<Option<Room>>;
     async fn insert(&self, new_room: NewRoom) -> RepositoryResult<Room>;
     /// `None` when the room does not exist.
@@ -57,7 +78,11 @@ pub trait RoomRepository: Send + Sync {
 
 #[async_trait]
 pub trait BookingRepository: Send + Sync {
-    async fn find(&self, filter: &BookingFilter) -> RepositoryResult<Vec<Booking>>;
+    async fn find(
+        &self,
+        filter: &BookingFilter,
+        page: PageRequest,
+    ) -> RepositoryResult<Page<Booking>>;
     async fn find_by_id(&self, id: Uuid) -> RepositoryResult<Option<Booking>>;
     async fn insert(&self, new_booking: NewBooking) -> RepositoryResult<Booking>;
     async fn update_status(

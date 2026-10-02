@@ -38,3 +38,8 @@ todo = "warn"
 # `unwrap()` panics without context; prefer `?` or `expect("why this cannot fail")`.
 # Allowed in tests via `clippy.toml`.
 unwrap_used = "warn"
+
+# sqlx macros run at compile time (they type-check every query); optimizing them speeds up
+# incremental builds noticeably – recommended by the sqlx docs.
+[profile.dev.package.sqlx-macros]
+opt-level = 3

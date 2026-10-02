@@ -1,0 +1,35 @@
+@base = http://localhost:3000/api/v1
+# Seeded rooms (migrations/*_seed_rooms.sql)
+@blue = 0199a3f0-0000-7000-8000-000000000001
+@green = 0199a3f0-0000-7000-8000-000000000002
+@user = 0199a3f0-0000-7000-8000-000000000007
+
+### Paged list
+GET {{base}}/rooms?page=1&size=2
+
+### Second page
+GET {{base}}/rooms?page=2&size=2
+
+### Filter + LIKE escaping (underscore is literal)
+GET {{base}}/rooms?name=_
+
+### Page size validation -> 422
+GET {{base}}/rooms?size=500
+
+### Unique constraint (case-insensitive name) -> 409
+POST {{base}}/rooms
+Content-Type: application/json
+
+{"name": "blue ROOM", "capacity": 3}
+
+### Create booking (stored in PostgreSQL)
+POST {{base}}/bookings
+Content-Type: application/json
+
+{"roomId": "{{green}}", "userId": "{{user}}", "startTime": "2026-10-05T09:00:00Z", "endTime": "2026-10-05T10:00:00Z"}
+
+### Bookings of a room, paged
+GET {{base}}/rooms/{{green}}/bookings?size=5
+
+### Bookings filtered
+GET {{base}}/bookings?userId={{user}}&status=ACTIVE&page=1&size=10

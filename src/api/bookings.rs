@@ -11,7 +11,10 @@ use uuid::Uuid;
 
 use crate::{
     api::{
-        dto::bookings::{BookingQuery, BookingResponse, CreateBookingRequest},
+        dto::{
+            bookings::{BookingQuery, BookingResponse, CreateBookingRequest},
+            pagination::PageResponse,
+        },
         error::ApiResult,
         extractors::{Json, Path, Query, ValidatedJson},
     },
@@ -33,11 +36,10 @@ pub fn router() -> Router<AppState> {
 async fn list_bookings(
     State(bookings): State<Arc<BookingService>>,
     Query(query): Query<BookingQuery>,
-) -> ApiResult<Json<Vec<BookingResponse>>> {
-    let bookings = bookings.list_bookings(&query.into()).await?;
-    Ok(Json(
-        bookings.into_iter().map(BookingResponse::from).collect(),
-    ))
+) -> ApiResult<Json<PageResponse<BookingResponse>>> {
+    let (filter, page) = query.into_domain()?;
+    let bookings = bookings.list_bookings(&filter, page).await?;
+    Ok(Json(bookings.into()))
 }
 
 async fn get_booking(

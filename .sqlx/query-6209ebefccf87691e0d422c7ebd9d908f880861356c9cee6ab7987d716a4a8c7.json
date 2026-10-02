@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT count(*) AS \"total!\"\n            FROM rooms\n            WHERE ($1::int4 IS NULL OR capacity >= $1)\n              AND ($2::text IS NULL OR name ILIKE $2)\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "total!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "6209ebefccf87691e0d422c7ebd9d908f880861356c9cee6ab7987d716a4a8c7"
+}

@@ -1,12 +1,18 @@
-//! PostgreSQL infrastructure: connection pool and migrations (step 014).
-//! Repository implementations follow in step 015.
+//! PostgreSQL infrastructure: connection pool and migrations (step 014),
+//! repositories implemented with sqlx (step 015).
+
+mod booking_repository;
+mod room_repository;
 
 use std::time::Duration;
 
 use anyhow::Context;
 use sqlx::{PgPool, postgres::PgPoolOptions};
 
-use crate::config::DatabaseSettings;
+pub use booking_repository::PostgresBookingRepository;
+pub use room_repository::PostgresRoomRepository;
+
+use crate::{config::DatabaseSettings, domain::repositories::RepositoryError};
 
 /// Creates the connection pool.
 ///
@@ -57,4 +63,33 @@ pub async fn run_migrations(pool: &PgPool) -> anyhow::Result<()> {
 /// Readiness probe: can we get a connection and run a trivial query?
 pub async fn ping(pool: &PgPool) -> Result<(), sqlx::Error> {
     sqlx::query("SELECT 1").execute(pool).await.map(|_| ())
+}
+
+// Translation of driver errors into the domain's port error (step 015).
+// Implemented here, in the adapter – the domain never sees `sqlx::Error`.
+impl From<sqlx::Error> for RepositoryError {
+    fn from(error: sqlx::Error) -> Self {
+        // `Database` = the server rejected the statement; inspect SQLSTATE / constraint name.
+        if let sqlx::Error::Database(db_error) = &error
+            && db_error.is_unique_violation()
+        {
+            let message = match db_error.constraint() {
+                Some("rooms_name_idx") => "a room with this name already exists".to_string(),
+                other => format!("unique constraint violated: {}", other.unwrap_or("unknown")),
+            };
+            return RepositoryError::Conflict(message);
+        }
+        RepositoryError::unexpected("database operation failed", error)
+    }
+}
+
+/// Escapes `%`, `_` and `\` so user input is matched literally inside a `LIKE` pattern.
+/// (SQL injection is already impossible thanks to bind parameters; this is about correctness:
+/// searching for "50%" must not match everything starting with "50".)
+fn like_pattern(text: &str) -> String {
+    let escaped = text
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    format!("%{escaped}%")
 }

@@ -30,8 +30,20 @@ pub enum DomainError {
     Conflict(String),
 
     /// Technical failure below the domain – not the client's fault (-> 500).
+    // No `#[from]` since step 015: the conversion is written by hand below,
+    // because one repository variant maps to a *different* domain variant.
     #[error(transparent)]
-    Repository(#[from] RepositoryError),
+    Repository(RepositoryError),
+}
+
+// `?` on `RepositoryResult` inside services uses this impl.
+impl From<RepositoryError> for DomainError {
+    fn from(error: RepositoryError) -> Self {
+        match error {
+            RepositoryError::Conflict(message) => DomainError::Conflict(message),
+            other => DomainError::Repository(other),
+        }
+    }
 }
 
 impl DomainError {

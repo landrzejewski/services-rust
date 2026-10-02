@@ -6,6 +6,7 @@ use uuid::Uuid;
 use async_trait::async_trait;
 
 use crate::domain::{
+    pagination::{Page, PageRequest},
     repositories::{RepositoryResult, RoomRepository},
     room::{NewRoom, OpeningHours, Room, RoomFilter, RoomName},
 };
@@ -61,7 +62,7 @@ impl InMemoryRoomRepository {
 // The in-memory version never fails, so every method returns `Ok(...)`.
 #[async_trait]
 impl RoomRepository for InMemoryRoomRepository {
-    async fn find(&self, filter: &RoomFilter) -> RepositoryResult<Vec<Room>> {
+    async fn find(&self, filter: &RoomFilter, page: PageRequest) -> RepositoryResult<Page<Room>> {
         // `read()` returns `Err` only if another thread panicked while holding the lock
         // ("poisoned" lock). Data may then be inconsistent, so panicking is a reasonable choice.
         let rooms = self.rooms.read().expect("rooms lock poisoned");
@@ -73,7 +74,7 @@ impl RoomRepository for InMemoryRoomRepository {
         // HashMap has no order – sort to get a stable API response.
         // UUID v7 starts with a timestamp, so sorting by id = sorting by creation time.
         result.sort_by_key(|room| room.id);
-        Ok(result)
+        Ok(paginate(result, page))
     }
 
     async fn find_by_id(&self, id: Uuid) -> RepositoryResult<Option<Room>> {
@@ -124,6 +125,21 @@ impl RoomRepository for InMemoryRoomRepository {
             .expect("rooms lock poisoned")
             .remove(&id)
             .is_some())
+    }
+}
+
+/// Cuts one page out of a fully loaded, sorted list.
+pub(super) fn paginate<T>(items: Vec<T>, page: PageRequest) -> Page<T> {
+    let total = items.len() as u64;
+    let items = items
+        .into_iter()
+        .skip(usize::try_from(page.offset()).unwrap_or(usize::MAX))
+        .take(page.size() as usize)
+        .collect();
+    Page {
+        items,
+        request: page,
+        total,
     }
 }
 
