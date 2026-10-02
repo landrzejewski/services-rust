@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::{
     Router,
     extract::State,
@@ -14,6 +16,7 @@ use crate::{
         extractors::{Json, Path, Query, ValidatedJson},
     },
     app::AppState,
+    domain::booking_service::BookingService,
 };
 
 pub fn router() -> Router<AppState> {
@@ -28,31 +31,28 @@ pub fn router() -> Router<AppState> {
 
 // `/bookings?roomId=...&status=ACTIVE`
 async fn list_bookings(
-    State(state): State<AppState>,
+    State(bookings): State<Arc<BookingService>>,
     Query(query): Query<BookingQuery>,
 ) -> ApiResult<Json<Vec<BookingResponse>>> {
-    let bookings = state.booking_service.list_bookings(&query.into()).await?;
+    let bookings = bookings.list_bookings(&query.into()).await?;
     Ok(Json(
         bookings.into_iter().map(BookingResponse::from).collect(),
     ))
 }
 
 async fn get_booking(
-    State(state): State<AppState>,
+    State(bookings): State<Arc<BookingService>>,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<BookingResponse>> {
-    let booking = state.booking_service.get_booking(id).await?;
+    let booking = bookings.get_booking(id).await?;
     Ok(Json(booking.into()))
 }
 
 async fn create_booking(
-    State(state): State<AppState>,
+    State(bookings): State<Arc<BookingService>>,
     ValidatedJson(request): ValidatedJson<CreateBookingRequest>,
 ) -> ApiResult<impl IntoResponse> {
-    let booking = state
-        .booking_service
-        .create_booking(request.try_into()?)
-        .await?;
+    let booking = bookings.create_booking(request.try_into()?).await?;
     Ok((
         StatusCode::CREATED,
         [(header::LOCATION, format!("/api/v1/bookings/{}", booking.id))],
@@ -61,9 +61,9 @@ async fn create_booking(
 }
 
 async fn cancel_booking(
-    State(state): State<AppState>,
+    State(bookings): State<Arc<BookingService>>,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<BookingResponse>> {
-    let booking = state.booking_service.cancel_booking(id).await?;
+    let booking = bookings.cancel_booking(id).await?;
     Ok(Json(booking.into()))
 }

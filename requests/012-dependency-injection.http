@@ -1,0 +1,11 @@
+@base = http://localhost:3000/api/v1
+
+### Handler gets State<Arc<RoomService>> via FromRef
+GET {{base}}/rooms
+
+### Handler using two sub-states (RoomService + BookingService)
+# @name rooms
+GET {{base}}/rooms?name=blue
+
+###
+GET {{base}}/rooms/{{rooms.response.body.$[0].id}}/bookings

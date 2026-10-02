@@ -58,6 +58,12 @@ impl IntoResponse for ApiError {
                 ProblemDetails::new(StatusCode::NOT_FOUND, "not-found", "Resource not found")
                     .with_detail(self.to_string())
             }
+            // Infrastructure failure: generic message for the client, details only in the logs.
+            ApiError::Domain(DomainError::Repository(_)) => ProblemDetails::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal-error",
+                "Internal server error",
+            ),
             ApiError::Domain(DomainError::Invalid(invalid)) => validation_problem(BTreeMap::from(
                 [(invalid.field.to_string(), vec![invalid.message.clone()])],
             )),
@@ -89,9 +95,13 @@ impl IntoResponse for ApiError {
         };
 
         // Client errors are logged at `debug` – they are expected and can be noisy.
-        // Server errors (5xx, from step 015) are logged at `error` with full details, while the
-        // client gets only a generic message (no stack traces / SQL in responses).
-        tracing::debug!(error = %self, status = problem.status, "request failed");
+        // Server errors (5xx) are logged at `error` with full details (`?self` = Debug, includes
+        // the source chain), while the client gets only a generic message.
+        if problem.status >= 500 {
+            tracing::error!(error = ?self, status = problem.status, "request failed");
+        } else {
+            tracing::debug!(error = %self, status = problem.status, "request failed");
+        }
         problem.into_response()
     }
 }

@@ -2,7 +2,7 @@
 
 use uuid::Uuid;
 
-use crate::domain::validation::InvalidValue;
+use crate::domain::{repositories::RepositoryError, validation::InvalidValue};
 
 /// Everything a domain service can report to its caller.
 ///
@@ -19,6 +19,10 @@ pub enum DomainError {
 
     #[error(transparent)]
     Invalid(#[from] InvalidValue),
+
+    /// Technical failure below the domain – not the client's fault (-> 500).
+    #[error(transparent)]
+    Repository(#[from] RepositoryError),
 }
 
 impl DomainError {

@@ -3,7 +3,12 @@ use std::{collections::HashMap, sync::RwLock};
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::domain::booking::{Booking, BookingFilter, BookingStatus, NewBooking};
+use async_trait::async_trait;
+
+use crate::domain::{
+    booking::{Booking, BookingFilter, BookingStatus, NewBooking},
+    repositories::{BookingRepository, RepositoryResult},
+};
 
 // Same structure as `InMemoryRoomRepository` – see comments there.
 pub struct InMemoryBookingRepository {
@@ -16,8 +21,11 @@ impl InMemoryBookingRepository {
             bookings: RwLock::new(HashMap::new()),
         }
     }
+}
 
-    pub async fn insert(&self, new_booking: NewBooking) -> Booking {
+#[async_trait]
+impl BookingRepository for InMemoryBookingRepository {
+    async fn insert(&self, new_booking: NewBooking) -> RepositoryResult<Booking> {
         let booking = Booking {
             id: Uuid::now_v7(),
             room_id: new_booking.room_id,
@@ -31,18 +39,19 @@ impl InMemoryBookingRepository {
             .write()
             .expect("bookings lock poisoned")
             .insert(booking.id, booking.clone());
-        booking
+        Ok(booking)
     }
 
-    pub async fn find_by_id(&self, id: Uuid) -> Option<Booking> {
-        self.bookings
+    async fn find_by_id(&self, id: Uuid) -> RepositoryResult<Option<Booking>> {
+        Ok(self
+            .bookings
             .read()
             .expect("bookings lock poisoned")
             .get(&id)
-            .cloned()
+            .cloned())
     }
 
-    pub async fn find(&self, filter: &BookingFilter) -> Vec<Booking> {
+    async fn find(&self, filter: &BookingFilter) -> RepositoryResult<Vec<Booking>> {
         let bookings = self.bookings.read().expect("bookings lock poisoned");
         let mut result: Vec<Booking> = bookings
             .values()
@@ -50,14 +59,20 @@ impl InMemoryBookingRepository {
             .cloned()
             .collect();
         result.sort_by_key(|booking| booking.period.start());
-        result
+        Ok(result)
     }
 
-    pub async fn update_status(&self, id: Uuid, status: BookingStatus) -> Option<Booking> {
+    async fn update_status(
+        &self,
+        id: Uuid,
+        status: BookingStatus,
+    ) -> RepositoryResult<Option<Booking>> {
         let mut bookings = self.bookings.write().expect("bookings lock poisoned");
-        let booking = bookings.get_mut(&id)?;
+        let Some(booking) = bookings.get_mut(&id) else {
+            return Ok(None);
+        };
         booking.status = status;
-        Some(booking.clone())
+        Ok(Some(booking.clone()))
     }
 }
 

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+async-trait = "0.1.92"
 axum = { version = "0.8.9", features = ["macros"] }
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde", "std"] }
 config = { version = "0.15.27", default-features = false, features = ["toml"] }

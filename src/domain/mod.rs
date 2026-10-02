@@ -6,6 +6,7 @@
 pub mod booking;
 pub mod booking_service;
 pub mod error;
+pub mod repositories;
 pub mod room;
 pub mod room_service;
 pub mod time_range;

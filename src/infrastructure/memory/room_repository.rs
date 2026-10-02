@@ -3,7 +3,12 @@ use std::{collections::HashMap, sync::RwLock};
 use chrono::NaiveTime;
 use uuid::Uuid;
 
-use crate::domain::room::{NewRoom, OpeningHours, Room, RoomFilter, RoomName};
+use async_trait::async_trait;
+
+use crate::domain::{
+    repositories::{RepositoryResult, RoomRepository},
+    room::{NewRoom, OpeningHours, Room, RoomFilter, RoomName},
+};
 
 // Repository – hides *how* data is stored; offers collection-like operations to the domain.
 //
@@ -50,10 +55,13 @@ impl InMemoryRoomRepository {
         }
         repository
     }
+}
 
-    // Methods are `async` although the in-memory version does no I/O: the signatures already
-    // match a database-backed repository (step 015), so callers won't change.
-    pub async fn find(&self, filter: &RoomFilter) -> Vec<Room> {
+// The trait implementation – the *adapter* plugging this storage into the domain port.
+// The in-memory version never fails, so every method returns `Ok(...)`.
+#[async_trait]
+impl RoomRepository for InMemoryRoomRepository {
+    async fn find(&self, filter: &RoomFilter) -> RepositoryResult<Vec<Room>> {
         // `read()` returns `Err` only if another thread panicked while holding the lock
         // ("poisoned" lock). Data may then be inconsistent, so panicking is a reasonable choice.
         let rooms = self.rooms.read().expect("rooms lock poisoned");
@@ -65,20 +73,21 @@ impl InMemoryRoomRepository {
         // HashMap has no order – sort to get a stable API response.
         // UUID v7 starts with a timestamp, so sorting by id = sorting by creation time.
         result.sort_by_key(|room| room.id);
-        result
+        Ok(result)
     }
 
-    pub async fn find_by_id(&self, id: Uuid) -> Option<Room> {
+    async fn find_by_id(&self, id: Uuid) -> RepositoryResult<Option<Room>> {
         // The guard returned by `read()` is dropped at the end of the statement,
         // releasing the lock; we return a clone, not a reference into the map.
-        self.rooms
+        Ok(self
+            .rooms
             .read()
             .expect("rooms lock poisoned")
             .get(&id)
-            .cloned()
+            .cloned())
     }
 
-    pub async fn insert(&self, new_room: NewRoom) -> Room {
+    async fn insert(&self, new_room: NewRoom) -> RepositoryResult<Room> {
         let room = Room {
             // UUID v7 = 48-bit Unix timestamp (ms) + random bits: unique without coordination
             // and roughly ordered by creation time (better B-tree index locality than random v4).
@@ -92,26 +101,29 @@ impl InMemoryRoomRepository {
             .write()
             .expect("rooms lock poisoned")
             .insert(room.id, room.clone());
-        room
+        Ok(room)
     }
 
-    pub async fn update(&self, id: Uuid, data: NewRoom) -> Option<Room> {
+    async fn update(&self, id: Uuid, data: NewRoom) -> RepositoryResult<Option<Room>> {
         let mut rooms = self.rooms.write().expect("rooms lock poisoned");
-        // `get_mut` returns `Option<&mut Room>`; `?` returns `None` when the id is unknown.
-        let room = rooms.get_mut(&id)?;
+        // `get_mut` returns `Option<&mut Room>`.
+        let Some(room) = rooms.get_mut(&id) else {
+            return Ok(None);
+        };
         room.name = data.name;
         room.description = data.description;
         room.capacity = data.capacity;
         room.opening_hours = data.opening_hours;
-        Some(room.clone())
+        Ok(Some(room.clone()))
     }
 
-    pub async fn delete(&self, id: Uuid) -> bool {
-        self.rooms
+    async fn delete(&self, id: Uuid) -> RepositoryResult<bool> {
+        Ok(self
+            .rooms
             .write()
             .expect("rooms lock poisoned")
             .remove(&id)
-            .is_some()
+            .is_some())
     }
 }
 

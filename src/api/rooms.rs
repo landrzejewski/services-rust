@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::{
     Router,
     extract::State,
@@ -18,7 +20,7 @@ use crate::{
         extractors::{Json, Path, Query, ValidatedJson},
     },
     app::AppState,
-    domain::booking::BookingFilter,
+    domain::{booking::BookingFilter, booking_service::BookingService, room_service::RoomService},
 };
 
 pub fn router() -> Router<AppState> {
@@ -32,8 +34,10 @@ pub fn router() -> Router<AppState> {
         .route("/rooms/{id}/bookings", get(list_room_bookings))
 }
 
-// `State<AppState>` extractor gives the handler access to the shared application state
-// (the value passed to `Router::with_state`). Destructuring `State(state)` unwraps it.
+// `State<T>` extractor gives the handler access to the shared application state
+// (the value passed to `Router::with_state`). Destructuring `State(service)` unwraps it.
+// Since step 012 handlers take only the service they need – `State<Arc<RoomService>>` –
+// extracted from `AppState` through `FromRef` (see `app.rs`).
 //
 // `Query<RoomQuery>` deserializes the query string: `/rooms?minCapacity=5&name=room`.
 // Unknown parameters are ignored; a value of a wrong type (`minCapacity=abc`) -> 400.
@@ -45,10 +49,10 @@ pub fn router() -> Router<AppState> {
 // `Result<T, E>` implements `IntoResponse` when both `T` and `E` do; `?` converts domain
 // errors into `ApiError`, which renders Problem Details. No error responses built by hand.
 async fn list_rooms(
-    State(state): State<AppState>,
+    State(rooms): State<Arc<RoomService>>,
     Query(query): Query<RoomQuery>,
 ) -> ApiResult<Json<Vec<RoomResponse>>> {
-    let rooms = state.room_service.list_rooms(&query.into()).await?;
+    let rooms = rooms.list_rooms(&query.into()).await?;
     // `into_iter().map(From::from).collect()` converts every element; the target type
     // `Vec<RoomResponse>` is inferred from the function's return type.
     Ok(Json(rooms.into_iter().map(RoomResponse::from).collect()))
@@ -61,10 +65,10 @@ async fn list_rooms(
 // Order of extractors: `State` and `Path` read only request *parts*, so any order works;
 // a body extractor (`Json`) would have to be the last argument.
 async fn get_room(
-    State(state): State<AppState>,
+    State(rooms): State<Arc<RoomService>>,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<RoomResponse>> {
-    let room = state.room_service.get_room(id).await?;
+    let room = rooms.get_room(id).await?;
     Ok(Json(room.into()))
 }
 
@@ -76,11 +80,11 @@ async fn get_room(
 //
 // `ValidatedJson<T>` (step 009) = `Json<T>` + `T::validate()`; invalid input -> 422 with field errors.
 async fn create_room(
-    State(state): State<AppState>,
+    State(rooms): State<Arc<RoomService>>,
     ValidatedJson(request): ValidatedJson<RoomRequest>,
 ) -> ApiResult<impl IntoResponse> {
     // DTO -> domain command; domain invariants are checked here (`TryFrom`), `?` maps the error.
-    let room = state.room_service.create_room(request.try_into()?).await?;
+    let room = rooms.create_room(request.try_into()?).await?;
 
     // REST convention for creation: 201 Created + `Location` header pointing to the new resource.
     // Headers can be added as an array of (name, value) tuples in the response tuple.
@@ -93,36 +97,38 @@ async fn create_room(
 
 // PUT = full replacement of the resource (all fields required). PATCH would be a partial update.
 async fn update_room(
-    State(state): State<AppState>,
+    State(rooms): State<Arc<RoomService>>,
     Path(id): Path<Uuid>,
     ValidatedJson(request): ValidatedJson<RoomRequest>,
 ) -> ApiResult<Json<RoomResponse>> {
-    let room = state
-        .room_service
-        .update_room(id, request.try_into()?)
-        .await?;
+    let room = rooms.update_room(id, request.try_into()?).await?;
     Ok(Json(room.into()))
 }
 
 // 204 No Content – success without a response body.
-async fn delete_room(State(state): State<AppState>, Path(id): Path<Uuid>) -> ApiResult<StatusCode> {
-    state.room_service.delete_room(id).await?;
+async fn delete_room(
+    State(rooms): State<Arc<RoomService>>,
+    Path(id): Path<Uuid>,
+) -> ApiResult<StatusCode> {
+    rooms.delete_room(id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 // Sub-resource: bookings belonging to one room. Reuses the booking service with a fixed filter.
+// Several `State` extractors with different sub-states can be combined.
 async fn list_room_bookings(
-    State(state): State<AppState>,
+    State(rooms): State<Arc<RoomService>>,
+    State(bookings): State<Arc<BookingService>>,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<Vec<BookingResponse>>> {
     // 404 for an unknown room instead of an empty list.
-    state.room_service.get_room(id).await?;
+    rooms.get_room(id).await?;
     let filter = BookingFilter {
         room_id: Some(id),
         // Struct update syntax: remaining fields from `Default` (all `None`).
         ..Default::default()
     };
-    let bookings = state.booking_service.list_bookings(&filter).await?;
+    let bookings = bookings.list_bookings(&filter).await?;
     Ok(Json(
         bookings.into_iter().map(BookingResponse::from).collect(),
     ))
