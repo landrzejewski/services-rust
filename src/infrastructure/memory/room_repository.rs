@@ -1,6 +1,12 @@
-use std::{collections::HashMap, sync::RwLock};
+use std::{
+    collections::HashMap,
+    sync::{
+        RwLock,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 
-use crate::domain::room::Room;
+use crate::domain::room::{NewRoom, Room, RoomFilter};
 
 // Repository – hides *how* data is stored; offers collection-like operations to the domain.
 //
@@ -12,47 +18,53 @@ use crate::domain::room::Room;
 // must live across `.await` points; it is slower otherwise.
 pub struct InMemoryRoomRepository {
     rooms: RwLock<HashMap<u64, Room>>,
+    // Id generator – plays the role of a database sequence. Atomics are lock-free;
+    // `fetch_add` returns the previous value and increments in one indivisible step.
+    // `Ordering::Relaxed` is enough: we only need unique numbers, not ordering with other memory.
+    next_id: AtomicU64,
 }
 
 impl InMemoryRoomRepository {
     pub fn new() -> Self {
         Self {
             rooms: RwLock::new(HashMap::new()),
+            next_id: AtomicU64::new(1),
         }
     }
 
     /// Repository pre-filled with sample data.
     pub fn with_sample_data() -> Self {
-        let rooms = [
-            (1, "Blue room", 8),
-            (2, "Green room", 4),
-            (3, "Conference hall", 40),
-        ]
-        .into_iter()
-        .map(|(id, name, capacity)| {
-            (
-                id,
-                Room {
-                    id,
-                    name: name.to_string(),
-                    capacity,
-                },
-            )
-        })
-        .collect();
-
-        Self {
-            rooms: RwLock::new(rooms),
+        let repository = Self::new();
+        for (name, capacity) in [("Blue room", 8), ("Green room", 4), ("Conference hall", 40)] {
+            let room = Room {
+                id: repository.generate_id(),
+                name: name.to_string(),
+                capacity,
+            };
+            repository
+                .rooms
+                .write()
+                .expect("rooms lock poisoned")
+                .insert(room.id, room);
         }
+        repository
+    }
+
+    fn generate_id(&self) -> u64 {
+        self.next_id.fetch_add(1, Ordering::Relaxed)
     }
 
     // Methods are `async` although the in-memory version does no I/O: the signatures already
     // match a database-backed repository (step 015), so callers won't change.
-    pub async fn find_all(&self) -> Vec<Room> {
+    pub async fn find(&self, filter: &RoomFilter) -> Vec<Room> {
         // `read()` returns `Err` only if another thread panicked while holding the lock
         // ("poisoned" lock). Data may then be inconsistent, so panicking is a reasonable choice.
         let rooms = self.rooms.read().expect("rooms lock poisoned");
-        let mut result: Vec<Room> = rooms.values().cloned().collect();
+        let mut result: Vec<Room> = rooms
+            .values()
+            .filter(|room| filter.matches(room))
+            .cloned()
+            .collect();
         // HashMap has no order – sort to get a stable API response.
         result.sort_by_key(|room| room.id);
         result
@@ -66,6 +78,36 @@ impl InMemoryRoomRepository {
             .expect("rooms lock poisoned")
             .get(&id)
             .cloned()
+    }
+
+    pub async fn insert(&self, new_room: NewRoom) -> Room {
+        let room = Room {
+            id: self.generate_id(),
+            name: new_room.name,
+            capacity: new_room.capacity,
+        };
+        self.rooms
+            .write()
+            .expect("rooms lock poisoned")
+            .insert(room.id, room.clone());
+        room
+    }
+
+    pub async fn update(&self, id: u64, data: NewRoom) -> Option<Room> {
+        let mut rooms = self.rooms.write().expect("rooms lock poisoned");
+        // `get_mut` returns `Option<&mut Room>`; `?` returns `None` when the id is unknown.
+        let room = rooms.get_mut(&id)?;
+        room.name = data.name;
+        room.capacity = data.capacity;
+        Some(room.clone())
+    }
+
+    pub async fn delete(&self, id: u64) -> bool {
+        self.rooms
+            .write()
+            .expect("rooms lock poisoned")
+            .remove(&id)
+            .is_some()
     }
 }
 
