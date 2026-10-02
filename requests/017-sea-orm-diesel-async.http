@@ -1,0 +1,34 @@
+@base = http://localhost:3000/api/v1
+# Start with one of:
+#   APP_STORAGE__ROOM_REPOSITORY=sqlx    cargo run
+#   APP_STORAGE__ROOM_REPOSITORY=sea-orm cargo run --features orm-sea
+#   APP_STORAGE__ROOM_REPOSITORY=diesel  cargo run --features orm-diesel
+# Responses are identical for every implementation.
+
+### Filter + pagination
+GET {{base}}/rooms?minCapacity=5&page=1&size=2
+
+### Case-insensitive name filter (ILIKE)
+GET {{base}}/rooms?name=GREEN
+
+### Create
+# @name created
+POST {{base}}/rooms
+Content-Type: application/json
+
+{"name": "ORM test room", "capacity": 5, "description": "temporary"}
+
+### Replace (description omitted -> NULL)
+PUT {{base}}/rooms/{{created.response.body.id}}
+Content-Type: application/json
+
+{"name": "ORM test room v2", "capacity": 6}
+
+### Unique name -> 409
+POST {{base}}/rooms
+Content-Type: application/json
+
+{"name": "Blue room", "capacity": 5}
+
+### Delete
+DELETE {{base}}/rooms/{{created.response.body.id}}

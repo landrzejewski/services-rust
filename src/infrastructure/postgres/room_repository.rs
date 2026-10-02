@@ -40,21 +40,41 @@ impl TryFrom<RoomRow> for Room {
     type Error = RepositoryError;
 
     fn try_from(row: RoomRow) -> Result<Self, Self::Error> {
-        Ok(Room {
-            id: row.id,
-            name: RoomName::parse(&row.name)
-                .map_err(|e| RepositoryError::unexpected("invalid room row", e))?,
-            description: row.description,
-            capacity: u32::try_from(row.capacity)
-                .map_err(|e| RepositoryError::unexpected("invalid room capacity", e))?,
-            opening_hours: OpeningHours::new(row.opens_at, row.closes_at)
-                .map_err(|e| RepositoryError::unexpected("invalid room row", e))?,
-        })
+        room_from_columns(
+            row.id,
+            &row.name,
+            row.description,
+            row.capacity,
+            row.opens_at,
+            row.closes_at,
+        )
     }
 }
 
+/// Column values -> domain `Room`. `pub(crate)`: reused by the sea-orm and diesel
+/// implementations (step 017), so all adapters validate stored data the same way.
+pub(crate) fn room_from_columns(
+    id: Uuid,
+    name: &str,
+    description: Option<String>,
+    capacity: i32,
+    opens_at: NaiveTime,
+    closes_at: NaiveTime,
+) -> RepositoryResult<Room> {
+    Ok(Room {
+        id,
+        name: RoomName::parse(name)
+            .map_err(|e| RepositoryError::unexpected("invalid room row", e))?,
+        description,
+        capacity: u32::try_from(capacity)
+            .map_err(|e| RepositoryError::unexpected("invalid room capacity", e))?,
+        opening_hours: OpeningHours::new(opens_at, closes_at)
+            .map_err(|e| RepositoryError::unexpected("invalid room row", e))?,
+    })
+}
+
 /// Domain `u32` -> PostgreSQL INTEGER (`i32`). Values are validated to be small anyway.
-fn to_db_int(value: u32) -> i32 {
+pub(crate) fn to_db_int(value: u32) -> i32 {
     i32::try_from(value).unwrap_or(i32::MAX)
 }
 

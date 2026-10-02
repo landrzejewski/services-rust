@@ -27,3 +27,7 @@ max_connections = 10
 min_connections = 1
 acquire_timeout_secs = 5
 run_migrations = true
+
+[storage]
+# RoomRepository implementation: "sqlx" | "sea-orm" (feature orm-sea) | "diesel" (feature orm-diesel)
+room_repository = "sqlx"

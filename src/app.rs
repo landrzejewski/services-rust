@@ -12,7 +12,7 @@ use sqlx::PgPool;
 
 use crate::{
     api,
-    config::Settings,
+    config::{RoomRepositoryKind, Settings},
     domain::{
         booking_policy::BookingPolicy,
         booking_service::BookingService,
@@ -58,8 +58,7 @@ pub async fn build_state(settings: &Settings) -> anyhow::Result<AppState> {
     // (step 015) changed only these lines – services and handlers stayed untouched.
     // Type annotation `Arc<dyn Trait>` performs the *unsizing coercion* from the concrete type.
     // In-memory repositories remain available for tests.
-    let room_repository: Arc<dyn RoomRepository> =
-        Arc::new(PostgresRoomRepository::new(db.clone()));
+    let room_repository = room_repository(settings, &db)?;
     let booking_repository: Arc<dyn BookingRepository> =
         Arc::new(PostgresBookingRepository::new(db.clone()));
     let booking_unit_of_work: Arc<dyn BookingUnitOfWork> =
@@ -91,6 +90,33 @@ pub async fn build_state(settings: &Settings) -> anyhow::Result<AppState> {
         booking_service,
         db,
     })
+}
+
+/// Selects the `RoomRepository` implementation from configuration (step 017).
+/// All three talk to the same PostgreSQL tables; the rest of the application can't tell
+/// the difference – it only sees `Arc<dyn RoomRepository>`.
+fn room_repository(settings: &Settings, db: &PgPool) -> anyhow::Result<Arc<dyn RoomRepository>> {
+    let kind = settings.storage.room_repository;
+    tracing::info!(?kind, "room repository implementation");
+
+    // `#[cfg]` on match arms: an arm exists only when its feature is compiled in.
+    // With all features enabled the last arm is unreachable – hence the `allow`.
+    #[allow(unreachable_patterns)]
+    let repository: Arc<dyn RoomRepository> = match kind {
+        RoomRepositoryKind::Sqlx => Arc::new(PostgresRoomRepository::new(db.clone())),
+        #[cfg(feature = "orm-sea")]
+        RoomRepositoryKind::SeaOrm => Arc::new(
+            crate::infrastructure::sea_orm::SeaOrmRoomRepository::new(db.clone()),
+        ),
+        #[cfg(feature = "orm-diesel")]
+        RoomRepositoryKind::Diesel => Arc::new(
+            crate::infrastructure::diesel::DieselRoomRepository::connect(&settings.database)?,
+        ),
+        other => anyhow::bail!(
+            "room repository {other:?} is not compiled in – rebuild with `--features orm-sea` / `orm-diesel`"
+        ),
+    };
+    Ok(repository)
 }
 
 /// Builds the router with middleware for the given state.

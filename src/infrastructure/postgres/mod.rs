@@ -12,6 +12,10 @@ use sqlx::{PgPool, postgres::PgPoolOptions};
 
 pub use booking_repository::PostgresBookingRepository;
 pub use room_repository::PostgresRoomRepository;
+// Re-exported for the ORM-based implementations; compiled only when one of them is enabled
+// (otherwise the import would be unused -> warning).
+#[cfg(any(feature = "orm-sea", feature = "orm-diesel"))]
+pub(crate) use room_repository::{room_from_columns, to_db_int};
 pub use unit_of_work::PostgresBookingUnitOfWork;
 
 use crate::{config::DatabaseSettings, domain::repositories::RepositoryError};
@@ -97,7 +101,7 @@ impl From<sqlx::Error> for RepositoryError {
 /// Escapes `%`, `_` and `\` so user input is matched literally inside a `LIKE` pattern.
 /// (SQL injection is already impossible thanks to bind parameters; this is about correctness:
 /// searching for "50%" must not match everything starting with "50".)
-fn like_pattern(text: &str) -> String {
+pub(crate) fn like_pattern(text: &str) -> String {
     let escaped = text
         .replace('\\', "\\\\")
         .replace('%', "\\%")

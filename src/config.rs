@@ -22,6 +22,7 @@ pub struct Settings {
     pub http: HttpSettings,
     pub booking: BookingSettings,
     pub database: DatabaseSettings,
+    pub storage: StorageSettings,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -82,6 +83,21 @@ impl std::fmt::Debug for DatabaseSettings {
             .field("run_migrations", &self.run_migrations)
             .finish()
     }
+}
+
+/// Which implementation backs `RoomRepository` (step 017).
+#[derive(Debug, Clone, Deserialize)]
+pub struct StorageSettings {
+    pub room_repository: RoomRepositoryKind,
+}
+
+// Enum instead of a free string: an unknown value fails at startup during deserialization.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RoomRepositoryKind {
+    Sqlx,
+    SeaOrm,
+    Diesel,
 }
 
 impl ServerSettings {
