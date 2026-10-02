@@ -1,0 +1,3 @@
+# Clippy configuration (lint *levels* live in Cargo.toml [lints]; this file holds lint *options*).
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true

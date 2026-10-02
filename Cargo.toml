@@ -5,5 +5,22 @@ edition = "2024"
 
 [dependencies]
 axum = "0.8.9"
+dotenvy = "0.15.7"
 serde = { version = "1.0.229", features = ["derive"] }
 tokio = { version = "1.53.1", features = ["full"] }
+
+# Lints configured once for the whole crate (Cargo 1.74+) instead of `#![deny(...)]` attributes in code.
+# Levels: "allow" | "warn" | "deny" | "forbid". CI runs clippy with `-D warnings`, so every "warn" fails the build there.
+[lints.rust]
+# No `unsafe` blocks in application code – memory safety is guaranteed by the compiler.
+unsafe_code = "forbid"
+
+[lints.clippy]
+# Lint groups need a lower priority so individual lints below can override them.
+all = { level = "warn", priority = -1 }
+# Leftovers from debugging / unfinished code.
+dbg_macro = "warn"
+todo = "warn"
+# `unwrap()` panics without context; prefer `?` or `expect("why this cannot fail")`.
+# Allowed in tests via `clippy.toml`.
+unwrap_used = "warn"

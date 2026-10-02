@@ -10,6 +10,10 @@
 //! - the runtime is built manually (instead of `#[tokio::main]`) to show its configuration,
 //! - a background task is spawned next to the HTTP server,
 //! - `runtime_demo` module shows `join!`, `select!`, `spawn_blocking` and a blocking anti-pattern.
+//!
+//! Step 003 – development environment:
+//! - `.env` file loaded with `dotenvy`, bind address read from `APP_ADDR`,
+//! - project-wide lints (`Cargo.toml [lints]`), formatting (`rustfmt.toml`), toolchain pinning.
 
 // Declares the `src/runtime_demo.rs` module. Modules are private by default;
 // `main.rs` can still use their `pub` items.
@@ -41,6 +45,12 @@ use serde::Serialize;
 // or `#[tokio::main(flavor = "current_thread")]`. Building the runtime by hand gives full control
 // (thread names, stack size, blocking pool size, hooks) – useful when tuning a service.
 fn main() {
+    // Load variables from `.env` into the process environment (if the file exists).
+    // Must run before anything reads env variables and before other threads are spawned.
+    // Existing environment variables are NOT overwritten – real env (Docker, CI, shell) wins.
+    // `.ok()` ignores the "file not found" error: in production there is usually no `.env`.
+    dotenvy::dotenv().ok();
+
     let runtime = tokio::runtime::Builder::new_multi_thread()
         // Number of worker threads executing async tasks. Default: number of CPU cores.
         // Deliberately small here so the blocking anti-pattern (`/demo/blocking`) is easy to observe.
@@ -78,11 +88,19 @@ async fn run() {
 
     // Bind a TCP socket. `0.0.0.0` accepts connections on all interfaces
     // (needed later inside containers); use `127.0.0.1` to listen locally only.
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
+    // `std::env::var` returns `Result<String, VarError>`; fall back to a default when unset.
+    // A typed configuration object replaces this in step 004.
+    let addr = std::env::var("APP_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".to_string());
+    let listener = tokio::net::TcpListener::bind(&addr)
         .await
-        .expect("failed to bind to port 3000");
+        .unwrap_or_else(|err| panic!("failed to bind to {addr}: {err}"));
 
-    println!("listening on http://{}", listener.local_addr().unwrap());
+    // `expect` instead of `unwrap` (denied by the `clippy::unwrap_used` lint):
+    // if it ever panics, the message explains which assumption was broken.
+    let local_addr = listener
+        .local_addr()
+        .expect("bound listener always has a local address");
+    println!("listening on http://{local_addr}");
 
     // `axum::serve` accepts connections and drives each one with hyper,
     // passing every request to the router. Each connection is handled in its own Tokio task,

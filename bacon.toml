@@ -1,0 +1,34 @@
+# bacon – background code checker: re-runs a cargo job on every file change
+# and shows a compact list of errors/warnings.
+#   cargo install --locked bacon
+#   bacon            # default job (clippy)
+#   bacon test       # run tests on change
+#   bacon run        # restart the server on change
+# Inside bacon press a job's key (c, t, r ...) to switch jobs.
+
+default_job = "clippy"
+
+[jobs.check]
+command = ["cargo", "check", "--all-targets"]
+need_stdout = false
+
+[jobs.clippy]
+command = ["cargo", "clippy", "--all-targets"]
+need_stdout = false
+
+[jobs.test]
+command = ["cargo", "test"]
+need_stdout = true
+
+# Long-running job: the server is killed and started again after each change.
+[jobs.run]
+command = ["cargo", "run"]
+need_stdout = true
+allow_warnings = true
+background = false
+on_change_strategy = "kill_then_restart"
+
+[keybindings]
+c = "job:clippy"
+t = "job:test"
+r = "job:run"

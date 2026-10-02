@@ -1,0 +1,6 @@
+# rustup reads this file and installs/uses the given toolchain automatically
+# when any cargo command is executed inside the project directory.
+[toolchain]
+# "stable" – latest stable release. For fully reproducible builds pin a version, e.g. "1.98.1".
+channel = "stable"
+components = ["rustfmt", "clippy", "rust-analyzer"]

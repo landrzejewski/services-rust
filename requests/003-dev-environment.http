@@ -1,0 +1,2 @@
+### Health check – server address comes from APP_ADDR (.env or real environment)
+GET http://localhost:3000/health

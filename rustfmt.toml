@@ -1,0 +1,8 @@
+# Formatting rules used by `cargo fmt` (and by IDEs on save). Only stable options are used.
+edition = "2024"
+max_width = 100
+newline_style = "Unix"
+# `Room { name: name }` -> `Room { name }`
+use_field_init_shorthand = true
+# `try!(x)` -> `x?`
+use_try_shorthand = true

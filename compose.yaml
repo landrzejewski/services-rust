@@ -1,0 +1,25 @@
+# Local infrastructure for development: `docker compose up -d`, stop: `docker compose down`
+# (add `-v` to also remove data volumes).
+# The application itself runs on the host with `cargo run`; it gets containerized in step 024.
+
+services:
+  # PostgreSQL – used from step 014. Credentials match DATABASE_URL in .env.example.
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: booking
+      POSTGRES_PASSWORD: booking
+      POSTGRES_DB: booking
+    ports:
+      - "5432:5432"
+    volumes:
+      # Postgres 18+ images keep data under /var/lib/postgresql/<version>/...
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U booking -d booking"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:
