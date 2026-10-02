@@ -1,0 +1,5 @@
+### Health check (port from config/default.toml or APP_SERVER__PORT)
+GET http://localhost:3000/health
+
+### Long request – send SIGTERM/Ctrl+C to the server while it runs to observe graceful shutdown
+GET http://localhost:3000/demo/non-blocking

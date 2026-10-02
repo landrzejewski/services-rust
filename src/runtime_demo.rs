@@ -191,8 +191,9 @@ async fn occupancy_report(Query(params): Query<ReportParams>) -> impl IntoRespon
 
 // ANTI-PATTERN – never do this in async code.
 // `std::thread::sleep` (like any blocking call: `std::fs`, blocking HTTP clients, `Mutex::lock`
-// held across long work, heavy loops) blocks the *whole worker thread*. With 2 workers,
-// two concurrent calls to this endpoint freeze the entire server – even `/health` hangs.
+// held across long work, heavy loops) blocks the *whole worker thread*. With 2 workers
+// (`APP_RUNTIME__WORKER_THREADS=2`), two concurrent calls to this endpoint freeze the entire
+// server – even `/health` hangs.
 async fn blocking_sleep() -> &'static str {
     std::thread::sleep(Duration::from_secs(5));
     "done (blocking)"

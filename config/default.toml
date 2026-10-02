@@ -1,0 +1,11 @@
+# Default configuration shared by all environments.
+# Override per environment in config/<APP_ENVIRONMENT>.toml or with env variables:
+#   [server] port  ->  APP_SERVER__PORT=8080
+
+[server]
+host = "127.0.0.1"
+port = 3000
+shutdown_grace_period_secs = 10
+
+[runtime]
+# worker_threads = 4   # absent = number of CPU cores

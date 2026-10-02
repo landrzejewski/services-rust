@@ -5,9 +5,13 @@ edition = "2024"
 
 [dependencies]
 axum = "0.8.9"
+config = { version = "0.15.27", default-features = false, features = ["toml"] }
 dotenvy = "0.15.7"
 serde = { version = "1.0.229", features = ["derive"] }
 tokio = { version = "1.53.1", features = ["full"] }
+tokio-util = "0.7.19"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
 # Lints configured once for the whole crate (Cargo 1.74+) instead of `#![deny(...)]` attributes in code.
 # Levels: "allow" | "warn" | "deny" | "forbid". CI runs clippy with `-D warnings`, so every "warn" fails the build there.
