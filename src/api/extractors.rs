@@ -1,18 +1,41 @@
 //! Custom extractors.
-
-use std::collections::BTreeMap;
+//!
+//! The built-in `Path`, `Query` and `Json` reject invalid input with plain-text bodies.
+//! The wrappers below behave the same, but their rejection is `ApiError`, so every error
+//! of the API – including malformed input – is returned as Problem Details JSON.
+//! Handlers import these instead of `axum::extract::{Path, Query}` / `axum::Json`.
 
 use axum::{
-    Json,
-    extract::{FromRequest, Request},
-    http::StatusCode,
+    extract::{FromRequest, FromRequestParts, Request},
     response::{IntoResponse, Response},
 };
-use serde::de::DeserializeOwned;
-use serde_json::json;
-use validator::{Validate, ValidationErrors, ValidationErrorsKind};
+use serde::{Serialize, de::DeserializeOwned};
+use validator::Validate;
 
-use crate::domain::validation::InvalidValue;
+use crate::api::error::ApiError;
+
+// `#[derive(FromRequestParts)]` (axum `macros` feature) implements the extractor by delegating:
+// `via(axum::extract::Path)` – extract using the original extractor,
+// `rejection(ApiError)`      – convert its rejection with `From<PathRejection> for ApiError`.
+#[derive(FromRequestParts)]
+#[from_request(via(axum::extract::Path), rejection(ApiError))]
+pub struct Path<T>(pub T);
+
+#[derive(FromRequestParts)]
+#[from_request(via(axum::extract::Query), rejection(ApiError))]
+pub struct Query<T>(pub T);
+
+// `FromRequest` (not `...Parts`) – consumes the body.
+#[derive(FromRequest)]
+#[from_request(via(axum::Json), rejection(ApiError))]
+pub struct Json<T>(pub T);
+
+// The wrapper is also used for responses: delegate to `axum::Json`.
+impl<T: Serialize> IntoResponse for Json<T> {
+    fn into_response(self) -> Response {
+        axum::Json(self.0).into_response()
+    }
+}
 
 /// Like `Json<T>`, but additionally runs `T::validate()` before the handler is called.
 ///
@@ -34,63 +57,13 @@ where
     S: Send + Sync,
 {
     // What is returned when extraction fails. Anything implementing `IntoResponse` works.
-    type Rejection = Response;
+    type Rejection = ApiError;
 
     async fn from_request(request: Request, state: &S) -> Result<Self, Self::Rejection> {
-        // Reuse the standard `Json` extractor for content-type checks and deserialization,
-        // only changing the rejection into a JSON body (default rejections are plain text).
-        let Json(value) = Json::<T>::from_request(request, state)
-            .await
-            .map_err(|rejection| {
-                let body = json!({ "error": rejection.body_text() });
-                (rejection.status(), Json(body)).into_response()
-            })?;
-
-        value
-            .validate()
-            .map_err(|errors| validation_failed(field_messages(&errors)))?;
-
+        // Reuse `Json` for content-type checks and deserialization; `?` converts
+        // its rejection (already an `ApiError`) and `ValidationErrors` via `From`.
+        let Json(value) = Json::<T>::from_request(request, state).await?;
+        value.validate()?;
         Ok(Self(value))
     }
-}
-
-/// 422 response with messages grouped by field:
-/// `{"error": "validation failed", "fields": {"name": ["must have 1-100 characters"]}}`
-pub fn validation_failed(fields: BTreeMap<String, Vec<String>>) -> Response {
-    let body = json!({ "error": "validation failed", "fields": fields });
-    (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
-}
-
-/// Same response shape for domain invariant violations (`TryFrom` DTO -> domain type).
-pub fn invalid_value(error: InvalidValue) -> Response {
-    validation_failed(BTreeMap::from([(
-        error.field.to_string(),
-        vec![error.message],
-    )]))
-}
-
-// `ValidationErrors` is a tree (nested structs / lists); flatten field-level messages.
-// `BTreeMap` – sorted keys give a deterministic JSON output.
-fn field_messages(errors: &ValidationErrors) -> BTreeMap<String, Vec<String>> {
-    errors
-        .errors()
-        .iter()
-        .filter_map(|(field, kind)| match kind {
-            ValidationErrorsKind::Field(errors) => Some((
-                field.to_string(),
-                errors
-                    .iter()
-                    .map(|error| {
-                        // Fall back to the error code when no custom message was set.
-                        error
-                            .message
-                            .as_ref()
-                            .map_or_else(|| error.code.to_string(), ToString::to_string)
-                    })
-                    .collect(),
-            )),
-            // Nested structs/lists are not used in this API.
-            ValidationErrorsKind::Struct(_) | ValidationErrorsKind::List(_) => None,
-        })
-        .collect()
 }

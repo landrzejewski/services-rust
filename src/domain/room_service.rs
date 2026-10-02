@@ -5,7 +5,10 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::{
-    domain::room::{NewRoom, Room, RoomFilter},
+    domain::{
+        error::{DomainError, DomainResult},
+        room::{NewRoom, Room, RoomFilter},
+    },
     infrastructure::memory::InMemoryRoomRepository,
 };
 
@@ -25,25 +28,37 @@ impl RoomService {
         Self { repository }
     }
 
-    pub async fn list_rooms(&self, filter: &RoomFilter) -> Vec<Room> {
-        self.repository.find(filter).await
+    // Since step 010 every operation returns `DomainResult<T>`, even those that can't fail yet:
+    // with a database (step 015) every call can fail, and callers already handle it.
+    pub async fn list_rooms(&self, filter: &RoomFilter) -> DomainResult<Vec<Room>> {
+        Ok(self.repository.find(filter).await)
     }
 
-    /// `None` = room does not exist. Error types replace `Option` in step 010.
-    pub async fn get_room(&self, id: Uuid) -> Option<Room> {
-        self.repository.find_by_id(id).await
+    pub async fn get_room(&self, id: Uuid) -> DomainResult<Room> {
+        // `ok_or_else` turns `Option<T>` into `Result<T, E>`; the closure builds the error
+        // only when needed (`ok_or` would build it eagerly every time).
+        self.repository
+            .find_by_id(id)
+            .await
+            .ok_or_else(|| DomainError::room_not_found(id))
     }
 
-    pub async fn create_room(&self, new_room: NewRoom) -> Room {
-        self.repository.insert(new_room).await
+    pub async fn create_room(&self, new_room: NewRoom) -> DomainResult<Room> {
+        Ok(self.repository.insert(new_room).await)
     }
 
-    pub async fn update_room(&self, id: Uuid, data: NewRoom) -> Option<Room> {
-        self.repository.update(id, data).await
+    pub async fn update_room(&self, id: Uuid, data: NewRoom) -> DomainResult<Room> {
+        self.repository
+            .update(id, data)
+            .await
+            .ok_or_else(|| DomainError::room_not_found(id))
     }
 
-    /// Returns `false` when the room did not exist.
-    pub async fn delete_room(&self, id: Uuid) -> bool {
-        self.repository.delete(id).await
+    pub async fn delete_room(&self, id: Uuid) -> DomainResult<()> {
+        if self.repository.delete(id).await {
+            Ok(())
+        } else {
+            Err(DomainError::room_not_found(id))
+        }
     }
 }

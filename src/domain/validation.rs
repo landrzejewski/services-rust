@@ -1,9 +1,12 @@
 //! Error returned when a value violates a domain invariant.
 
-use std::fmt;
-
 /// A value could not be turned into a valid domain type.
-#[derive(Debug, Clone, PartialEq, Eq)]
+//
+// `thiserror::Error` derive (step 010) generates the `Display` and `std::error::Error`
+// impls that were written by hand in step 009. `#[error("...")]` is the `Display` format;
+// fields are referenced by name.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{field}: {message}")]
 pub struct InvalidValue {
     /// Name of the offending field (used by the API layer to build field-level error responses).
     pub field: &'static str,
@@ -18,13 +21,3 @@ impl InvalidValue {
         }
     }
 }
-
-// `Display` + `std::error::Error` make it a regular Rust error type (usable with `?`,
-// `Box<dyn Error>`, logging). Step 010 replaces this boilerplate with the `thiserror` derive.
-impl fmt::Display for InvalidValue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.field, self.message)
-    }
-}
-
-impl std::error::Error for InvalidValue {}

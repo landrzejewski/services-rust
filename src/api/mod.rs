@@ -16,19 +16,16 @@
 
 mod bookings;
 pub mod dto;
+pub mod error;
 pub mod extractors;
 mod health;
+pub mod problem;
 mod rooms;
 pub mod serde_formats;
 
-use axum::{
-    Json, Router,
-    http::{StatusCode, Uri},
-    response::IntoResponse,
-};
-use serde_json::json;
+use axum::{Router, http::Uri};
 
-use crate::app::AppState;
+use crate::{api::error::ApiError, app::AppState};
 
 /// Assembles routers of all API areas and attaches the shared state.
 pub fn router(state: AppState) -> Router {
@@ -54,17 +51,11 @@ pub fn router(state: AppState) -> Router {
 }
 
 // `Uri` is an extractor too – the full request URI.
-// `json!` (serde_json) builds an ad-hoc JSON value without declaring a struct.
-async fn not_found(uri: Uri) -> impl IntoResponse {
-    (
-        StatusCode::NOT_FOUND,
-        Json(json!({ "error": format!("no route for {}", uri.path()) })),
-    )
+// Fallbacks return `ApiError` like any handler, so 404/405 use the Problem Details format as well.
+async fn not_found(uri: Uri) -> ApiError {
+    ApiError::RouteNotFound(uri.path().to_string())
 }
 
-async fn method_not_allowed() -> impl IntoResponse {
-    (
-        StatusCode::METHOD_NOT_ALLOWED,
-        Json(json!({ "error": "method not allowed" })),
-    )
+async fn method_not_allowed() -> ApiError {
+    ApiError::MethodNotAllowed
 }

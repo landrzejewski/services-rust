@@ -1,0 +1,39 @@
+@base = http://localhost:3000/api/v1
+
+### Domain NotFound -> 404 application/problem+json
+GET {{base}}/rooms/0199a3f0-0000-7000-8000-000000000001
+
+### Path rejection -> 400
+GET {{base}}/rooms/abc
+
+### Query rejection -> 400
+GET {{base}}/rooms?minCapacity=x
+
+### Body rejection (no Content-Type) -> 415
+POST {{base}}/rooms
+
+{}
+
+### Validation -> 422 with errors map
+POST {{base}}/rooms
+Content-Type: application/json
+
+{"name": "", "capacity": 0}
+
+### Domain invariant -> 422
+POST {{base}}/rooms
+Content-Type: application/json
+
+{"name": "   ", "capacity": 3}
+
+### Referenced room does not exist -> 422 (field roomId)
+POST {{base}}/bookings
+Content-Type: application/json
+
+{"roomId": "0199a3f0-0000-7000-8000-000000000001", "userId": "0199a3f0-0000-7000-8000-000000000007", "startTime": "2026-10-05T09:00:00Z", "endTime": "2026-10-05T10:00:00Z"}
+
+### Method not allowed -> 405
+DELETE {{base}}/bookings
+
+### Unknown route -> 404
+GET {{base}}/nope
