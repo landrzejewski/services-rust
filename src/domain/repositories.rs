@@ -11,11 +11,13 @@
 //! ```
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::domain::{
     booking::{Booking, BookingFilter, BookingStatus, NewBooking},
     room::{NewRoom, Room, RoomFilter},
+    time_range::TimeRange,
 };
 
 /// Storage failure (connection lost, timeout, constraint the domain didn't expect...).
@@ -63,4 +65,28 @@ pub trait BookingRepository: Send + Sync {
         id: Uuid,
         status: BookingStatus,
     ) -> RepositoryResult<Option<Booking>>;
+
+    // Queries needed by business rules (step 013). Dedicated methods instead of loading all
+    // bookings and filtering in Rust: a database answers them with one indexed query.
+
+    /// Active bookings of the room whose period overlaps `period`.
+    async fn find_active_overlapping(
+        &self,
+        room_id: Uuid,
+        period: &TimeRange,
+    ) -> RepositoryResult<Vec<Booking>>;
+
+    /// Number of active bookings of the user that end after `from` (upcoming or ongoing).
+    async fn count_active_by_user(
+        &self,
+        user_id: Uuid,
+        from: DateTime<Utc>,
+    ) -> RepositoryResult<usize>;
+
+    /// Number of active bookings of the room that end after `from`.
+    async fn count_active_by_room(
+        &self,
+        room_id: Uuid,
+        from: DateTime<Utc>,
+    ) -> RepositoryResult<usize>;
 }

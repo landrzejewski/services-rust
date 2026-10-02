@@ -58,6 +58,20 @@ impl IntoResponse for ApiError {
                 ProblemDetails::new(StatusCode::NOT_FOUND, "not-found", "Resource not found")
                     .with_detail(self.to_string())
             }
+            // 422 – the request is well-formed, but business rules don't allow it.
+            ApiError::Domain(DomainError::RuleViolated { rule, message }) => ProblemDetails::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "business-rule-violation",
+                "Business rule violated",
+            )
+            .with_detail(message.clone())
+            .with_rule(*rule),
+            // 409 – conflicts with the current state of the resource; retrying the same request
+            // won't help until the state changes.
+            ApiError::Domain(DomainError::Conflict(message)) => {
+                ProblemDetails::new(StatusCode::CONFLICT, "conflict", "Conflict")
+                    .with_detail(message.clone())
+            }
             // Infrastructure failure: generic message for the client, details only in the logs.
             ApiError::Domain(DomainError::Repository(_)) => ProblemDetails::new(
                 StatusCode::INTERNAL_SERVER_ERROR,

@@ -16,3 +16,7 @@ body_limit_bytes = 65536
 # Frontend dev servers allowed to call the API from a browser.
 cors_allowed_origins = ["http://localhost:5173"]
 slow_request_threshold_ms = 500
+
+[booking]
+max_active_bookings_per_user = 3
+max_duration_minutes = 480

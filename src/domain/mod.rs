@@ -4,7 +4,9 @@
 //! It can be unit-tested without a server or a database.
 
 pub mod booking;
+pub mod booking_policy;
 pub mod booking_service;
+pub mod clock;
 pub mod error;
 pub mod repositories;
 pub mod room;

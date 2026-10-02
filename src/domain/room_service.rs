@@ -5,8 +5,9 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::domain::{
+    clock::Clock,
     error::{DomainError, DomainResult},
-    repositories::RoomRepository,
+    repositories::{BookingRepository, RoomRepository},
     room::{NewRoom, Room, RoomFilter},
 };
 
@@ -19,12 +20,23 @@ use crate::domain::{
 // `domain` no longer imports anything from `infrastructure`.
 pub struct RoomService {
     repository: Arc<dyn RoomRepository>,
+    // Needed by the rule "a room with upcoming bookings can't be deleted" (step 013).
+    bookings: Arc<dyn BookingRepository>,
+    clock: Arc<dyn Clock>,
 }
 
 impl RoomService {
     // Constructor injection: dependencies are passed in, never created inside the service.
-    pub fn new(repository: Arc<dyn RoomRepository>) -> Self {
-        Self { repository }
+    pub fn new(
+        repository: Arc<dyn RoomRepository>,
+        bookings: Arc<dyn BookingRepository>,
+        clock: Arc<dyn Clock>,
+    ) -> Self {
+        Self {
+            repository,
+            bookings,
+            clock,
+        }
     }
 
     // `?` converts `RepositoryError` into `DomainError::Repository` (`#[from]`).
@@ -53,6 +65,16 @@ impl RoomService {
     }
 
     pub async fn delete_room(&self, id: Uuid) -> DomainResult<()> {
+        // Business rule: deleting a room would silently invalidate bookings users rely on.
+        let upcoming = self
+            .bookings
+            .count_active_by_room(id, self.clock.now())
+            .await?;
+        if upcoming > 0 {
+            return Err(DomainError::Conflict(format!(
+                "room {id} has {upcoming} upcoming booking(s); cancel them first"
+            )));
+        }
         if self.repository.delete(id).await? {
             Ok(())
         } else {
@@ -66,7 +88,13 @@ mod tests {
     use async_trait::async_trait;
 
     use super::*;
-    use crate::domain::repositories::{RepositoryError, RepositoryResult};
+    use crate::{
+        domain::{
+            clock::SystemClock,
+            repositories::{RepositoryError, RepositoryResult},
+        },
+        infrastructure::memory::InMemoryBookingRepository,
+    };
 
     // Thanks to the trait, a test can inject any implementation – here a stub that always fails.
     // No database, no HTTP; tests the service's error handling in isolation.
@@ -100,7 +128,11 @@ mod tests {
 
     #[tokio::test]
     async fn repository_failure_becomes_domain_error() {
-        let service = RoomService::new(Arc::new(FailingRepository));
+        let service = RoomService::new(
+            Arc::new(FailingRepository),
+            Arc::new(InMemoryBookingRepository::new()),
+            Arc::new(SystemClock),
+        );
 
         let result = service.get_room(Uuid::now_v7()).await;
 

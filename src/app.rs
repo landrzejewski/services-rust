@@ -12,7 +12,9 @@ use crate::{
     api,
     config::Settings,
     domain::{
+        booking_policy::BookingPolicy,
         booking_service::BookingService,
+        clock::{Clock, SystemClock},
         repositories::{BookingRepository, RoomRepository},
         room_service::RoomService,
     },
@@ -35,7 +37,7 @@ pub struct AppState {
 }
 
 /// Builds the object graph: repositories -> services -> state.
-pub fn build_state(_settings: &Settings) -> AppState {
+pub fn build_state(settings: &Settings) -> AppState {
     // The concrete implementation is chosen here and only here. Switching to PostgreSQL
     // (step 015) changes these lines – services and handlers stay untouched.
     // Type annotation `Arc<dyn Trait>` performs the *unsizing coercion* from the concrete type.
@@ -43,9 +45,26 @@ pub fn build_state(_settings: &Settings) -> AppState {
         Arc::new(InMemoryRoomRepository::with_sample_data());
     let booking_repository: Arc<dyn BookingRepository> = Arc::new(InMemoryBookingRepository::new());
 
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+
+    // Configuration -> domain value object; the domain never reads `Settings` directly.
+    let policy = BookingPolicy {
+        max_active_bookings_per_user: settings.booking.max_active_bookings_per_user,
+        max_duration: chrono::TimeDelta::minutes(settings.booking.max_duration_minutes),
+    };
+
     // `Arc::clone(&x)` (same as `x.clone()`) – a second owner of the same repository instance.
-    let room_service = Arc::new(RoomService::new(Arc::clone(&room_repository)));
-    let booking_service = Arc::new(BookingService::new(booking_repository, room_repository));
+    let room_service = Arc::new(RoomService::new(
+        Arc::clone(&room_repository),
+        Arc::clone(&booking_repository),
+        Arc::clone(&clock),
+    ));
+    let booking_service = Arc::new(BookingService::new(
+        booking_repository,
+        room_repository,
+        clock,
+        policy,
+    ));
 
     AppState {
         room_service,

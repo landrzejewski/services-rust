@@ -20,6 +20,7 @@ pub struct Settings {
     pub server: ServerSettings,
     pub runtime: RuntimeSettings,
     pub http: HttpSettings,
+    pub booking: BookingSettings,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -47,6 +48,13 @@ pub struct HttpSettings {
     pub cors_allowed_origins: Vec<String>,
     /// Requests slower than this are logged as warnings.
     pub slow_request_threshold_ms: u64,
+}
+
+/// Business limits of the booking rules (step 013).
+#[derive(Debug, Clone, Deserialize)]
+pub struct BookingSettings {
+    pub max_active_bookings_per_user: usize,
+    pub max_duration_minutes: i64,
 }
 
 impl ServerSettings {

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::RwLock};
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use async_trait::async_trait;
@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use crate::domain::{
     booking::{Booking, BookingFilter, BookingStatus, NewBooking},
     repositories::{BookingRepository, RepositoryResult},
+    time_range::TimeRange,
 };
 
 // Same structure as `InMemoryRoomRepository` – see comments there.
@@ -73,6 +74,49 @@ impl BookingRepository for InMemoryBookingRepository {
         };
         booking.status = status;
         Ok(Some(booking.clone()))
+    }
+
+    async fn find_active_overlapping(
+        &self,
+        room_id: Uuid,
+        period: &TimeRange,
+    ) -> RepositoryResult<Vec<Booking>> {
+        Ok(self
+            .bookings
+            .read()
+            .expect("bookings lock poisoned")
+            .values()
+            .filter(|b| b.room_id == room_id && b.is_active() && b.period.overlaps(period))
+            .cloned()
+            .collect())
+    }
+
+    async fn count_active_by_user(
+        &self,
+        user_id: Uuid,
+        from: DateTime<Utc>,
+    ) -> RepositoryResult<usize> {
+        Ok(self
+            .bookings
+            .read()
+            .expect("bookings lock poisoned")
+            .values()
+            .filter(|b| b.user_id == user_id && b.is_active() && b.period.end() > from)
+            .count())
+    }
+
+    async fn count_active_by_room(
+        &self,
+        room_id: Uuid,
+        from: DateTime<Utc>,
+    ) -> RepositoryResult<usize> {
+        Ok(self
+            .bookings
+            .read()
+            .expect("bookings lock poisoned")
+            .values()
+            .filter(|b| b.room_id == room_id && b.is_active() && b.period.end() > from)
+            .count())
     }
 }
 

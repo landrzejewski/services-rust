@@ -20,6 +20,15 @@ pub enum DomainError {
     #[error(transparent)]
     Invalid(#[from] InvalidValue),
 
+    /// A business rule rejected the operation (step 013). `rule` is a stable, machine-readable
+    /// identifier clients can react to; `message` explains it to humans.
+    #[error("{message}")]
+    RuleViolated { rule: &'static str, message: String },
+
+    /// The operation conflicts with the current state of a resource (overlap, already cancelled).
+    #[error("{0}")]
+    Conflict(String),
+
     /// Technical failure below the domain – not the client's fault (-> 500).
     #[error(transparent)]
     Repository(#[from] RepositoryError),
@@ -35,6 +44,13 @@ impl DomainError {
         Self::NotFound {
             entity: "booking",
             id,
+        }
+    }
+
+    pub fn rule(rule: &'static str, message: impl Into<String>) -> Self {
+        Self::RuleViolated {
+            rule,
+            message: message.into(),
         }
     }
 }

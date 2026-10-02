@@ -32,6 +32,9 @@ pub struct ProblemDetails {
     /// Extension member (allowed by the RFC): field-level validation messages.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub errors: Option<BTreeMap<String, Vec<String>>>,
+    /// Extension member: identifier of the violated business rule (step 013).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rule: Option<String>,
 }
 
 impl ProblemDetails {
@@ -42,6 +45,7 @@ impl ProblemDetails {
             status: status.as_u16(),
             detail: None,
             errors: None,
+            rule: None,
         }
     }
 
@@ -49,6 +53,11 @@ impl ProblemDetails {
     // `ProblemDetails::new(..).with_detail(..).with_errors(..)`.
     pub fn with_detail(mut self, detail: impl Into<String>) -> Self {
         self.detail = Some(detail.into());
+        self
+    }
+
+    pub fn with_rule(mut self, rule: impl Into<String>) -> Self {
+        self.rule = Some(rule.into());
         self
     }
 

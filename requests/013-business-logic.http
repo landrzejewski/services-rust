@@ -1,0 +1,49 @@
+@base = http://localhost:3000/api/v1
+@user = 0199a3f0-0000-7000-8000-000000000007
+
+### Green room: capacity 4, open 08:00-18:00 UTC
+# @name rooms
+GET {{base}}/rooms?name=green
+
+### Valid booking -> 201 (dates must be in the future)
+# @name booking
+POST {{base}}/bookings
+Content-Type: application/json
+
+{"roomId": "{{rooms.response.body.$[0].id}}", "userId": "{{user}}", "startTime": "2026-10-05T09:00:00Z", "endTime": "2026-10-05T10:00:00Z"}
+
+### Overlap -> 409
+POST {{base}}/bookings
+Content-Type: application/json
+
+{"roomId": "{{rooms.response.body.$[0].id}}", "userId": "{{user}}", "startTime": "2026-10-05T09:30:00Z", "endTime": "2026-10-05T10:30:00Z"}
+
+### Adjacent slot is fine -> 201
+POST {{base}}/bookings
+Content-Type: application/json
+
+{"roomId": "{{rooms.response.body.$[0].id}}", "userId": "{{user}}", "startTime": "2026-10-05T10:00:00Z", "endTime": "2026-10-05T11:00:00Z"}
+
+### Capacity exceeded -> 422 rule booking.capacity_exceeded
+POST {{base}}/bookings
+Content-Type: application/json
+
+{"roomId": "{{rooms.response.body.$[0].id}}", "userId": "{{user}}", "startTime": "2026-10-05T12:00:00Z", "endTime": "2026-10-05T13:00:00Z", "attendees": 9}
+
+### Outside opening hours -> 422
+POST {{base}}/bookings
+Content-Type: application/json
+
+{"roomId": "{{rooms.response.body.$[0].id}}", "userId": "{{user}}", "startTime": "2026-10-05T17:00:00Z", "endTime": "2026-10-05T19:00:00Z"}
+
+### In the past -> 422
+POST {{base}}/bookings
+Content-Type: application/json
+
+{"roomId": "{{rooms.response.body.$[0].id}}", "userId": "{{user}}", "startTime": "2025-01-01T09:00:00Z", "endTime": "2025-01-01T10:00:00Z"}
+
+### Delete room with upcoming bookings -> 409
+DELETE {{base}}/rooms/{{rooms.response.body.$[0].id}}
+
+### Cancel -> 200, second time -> 409
+POST {{base}}/bookings/{{booking.response.body.id}}/cancel

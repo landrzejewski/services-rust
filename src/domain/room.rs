@@ -9,7 +9,7 @@ use std::fmt;
 use chrono::NaiveTime;
 use uuid::Uuid;
 
-use crate::domain::validation::InvalidValue;
+use crate::domain::{time_range::TimeRange, validation::InvalidValue};
 
 // A domain model: the shape of the data the business logic works with.
 // Since step 009 it is built from validated value types (`RoomName`, `OpeningHours`),
@@ -93,6 +93,14 @@ impl OpeningHours {
 
     pub fn closes_at(&self) -> NaiveTime {
         self.closes_at
+    }
+
+    /// True when the whole period lies within one day's opening hours (times compared in UTC).
+    pub fn contains(&self, period: &TimeRange) -> bool {
+        let (start, end) = (period.start(), period.end());
+        start.date_naive() == end.date_naive()
+            && start.time() >= self.opens_at
+            && end.time() <= self.closes_at
     }
 }
 

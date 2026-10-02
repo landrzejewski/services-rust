@@ -3,7 +3,7 @@
 use chrono::{DateTime, TimeDelta, Utc};
 use uuid::Uuid;
 
-use crate::domain::time_range::TimeRange;
+use crate::domain::{error::DomainError, time_range::TimeRange};
 
 // `DateTime<Utc>` (chrono) – an instant in time in UTC.
 // Store and compute in UTC; convert to local time zones only for presentation.
@@ -24,6 +24,29 @@ impl Booking {
     /// Derived value – computed from the state, not stored.
     pub fn duration(&self) -> TimeDelta {
         self.period.duration()
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.status == BookingStatus::Active
+    }
+
+    /// Behaviour on the entity: a state transition guarded by business rules.
+    /// The entity protects its own consistency; the service only orchestrates.
+    pub fn cancel(&mut self, now: DateTime<Utc>) -> Result<(), DomainError> {
+        if !self.is_active() {
+            return Err(DomainError::Conflict(format!(
+                "booking {} is already cancelled",
+                self.id
+            )));
+        }
+        if self.period.start() <= now {
+            return Err(DomainError::rule(
+                "booking.already_started",
+                "a booking that has already started cannot be cancelled",
+            ));
+        }
+        self.status = BookingStatus::Cancelled;
+        Ok(())
     }
 }
 
