@@ -149,6 +149,12 @@ impl ServerSettings {
 
 impl Settings {
     pub fn load() -> Result<Self, ConfigError> {
+        Self::load_with_overrides(&[])
+    }
+
+    /// Like `load`, with explicit values taking precedence over every source (step 022).
+    /// Tests use it to supply secrets and switch features off without touching env variables.
+    pub fn load_with_overrides(overrides: &[(&str, &str)]) -> Result<Self, ConfigError> {
         let environment = std::env::var("APP_ENVIRONMENT").unwrap_or_else(|_| "local".into());
 
         let mut builder = Config::builder();
@@ -158,7 +164,7 @@ impl Settings {
             builder = builder.set_default("database.url", url)?;
         }
 
-        builder
+        builder = builder
             // `required(true)` – startup fails when the defaults file is missing.
             .add_source(File::with_name("config/default").required(true))
             .add_source(File::with_name(&format!("config/{environment}")).required(false))
@@ -174,8 +180,12 @@ impl Settings {
                     .try_parsing(true)
                     .list_separator(",")
                     .with_list_parse_key("http.cors_allowed_origins"),
-            )
-            .build()?
-            .try_deserialize()
+            );
+
+        // Overrides have the highest precedence, independent of the order of calls.
+        for (key, value) in overrides {
+            builder = builder.set_override(*key, *value)?;
+        }
+        builder.build()?.try_deserialize()
     }
 }

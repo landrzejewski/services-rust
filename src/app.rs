@@ -22,6 +22,10 @@ use crate::{
         room_service::RoomService,
     },
     infrastructure::{
+        memory::{
+            InMemoryBookingRepository, InMemoryBookingUnitOfWork, InMemoryRoomRepository,
+            InMemoryUserRepository,
+        },
         postgres::{
             self, PostgresBookingRepository, PostgresBookingUnitOfWork, PostgresRoomRepository,
             PostgresUserRepository,
@@ -51,6 +55,45 @@ pub struct AppState {
     pub db: PgPool,
 }
 
+/// The storage layer as a set of trait objects (step 022).
+/// Production uses PostgreSQL; tests plug in in-memory implementations – everything above
+/// (services, handlers, middleware) is identical in both cases.
+pub struct Repositories {
+    pub rooms: Arc<dyn RoomRepository>,
+    pub bookings: Arc<dyn BookingRepository>,
+    pub booking_unit_of_work: Arc<dyn BookingUnitOfWork>,
+    pub users: Arc<dyn UserRepository>,
+}
+
+impl Repositories {
+    pub fn postgres(settings: &Settings, db: &PgPool) -> anyhow::Result<Self> {
+        // The concrete implementation is chosen here and only here. Switching to PostgreSQL
+        // (step 015) changed only these lines – services and handlers stayed untouched.
+        // Type annotation `Arc<dyn Trait>` performs the *unsizing coercion* from the concrete type.
+        Ok(Self {
+            rooms: room_repository(settings, db)?,
+            bookings: Arc::new(PostgresBookingRepository::new(db.clone())),
+            booking_unit_of_work: Arc::new(PostgresBookingUnitOfWork::new(db.clone())),
+            users: Arc::new(PostgresUserRepository::new(db.clone())),
+        })
+    }
+
+    /// In-memory storage – fast tests without a database.
+    pub fn in_memory() -> Self {
+        let rooms = Arc::new(InMemoryRoomRepository::new());
+        let bookings = Arc::new(InMemoryBookingRepository::new());
+        Self {
+            booking_unit_of_work: Arc::new(InMemoryBookingUnitOfWork::new(
+                Arc::clone(&rooms),
+                Arc::clone(&bookings),
+            )),
+            rooms,
+            bookings,
+            users: Arc::new(InMemoryUserRepository::default()),
+        }
+    }
+}
+
 /// Builds the object graph: database pool -> repositories -> services -> state.
 ///
 /// `async` + `anyhow::Result` since step 014: connecting to the database can fail at startup.
@@ -61,16 +104,22 @@ pub async fn build_state(settings: &Settings) -> anyhow::Result<AppState> {
     if settings.database.run_migrations {
         postgres::run_migrations(&db).await?;
     }
+    let repositories = Repositories::postgres(settings, &db)?;
+    build_state_with(settings, repositories, db)
+}
 
-    // The concrete implementation is chosen here and only here. Switching to PostgreSQL
-    // (step 015) changed only these lines – services and handlers stayed untouched.
-    // Type annotation `Arc<dyn Trait>` performs the *unsizing coercion* from the concrete type.
-    // In-memory repositories remain available for tests.
-    let room_repository = room_repository(settings, &db)?;
-    let booking_repository: Arc<dyn BookingRepository> =
-        Arc::new(PostgresBookingRepository::new(db.clone()));
-    let booking_unit_of_work: Arc<dyn BookingUnitOfWork> =
-        Arc::new(PostgresBookingUnitOfWork::new(db.clone()));
+/// Wires services on top of the given repositories (shared by production and tests).
+pub fn build_state_with(
+    settings: &Settings,
+    repositories: Repositories,
+    db: PgPool,
+) -> anyhow::Result<AppState> {
+    let Repositories {
+        rooms: room_repository,
+        bookings: booking_repository,
+        booking_unit_of_work,
+        users: user_repository,
+    } = repositories;
 
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
 
@@ -94,8 +143,6 @@ pub async fn build_state(settings: &Settings) -> anyhow::Result<AppState> {
     ));
 
     // Security (step 018).
-    let user_repository: Arc<dyn UserRepository> =
-        Arc::new(PostgresUserRepository::new(db.clone()));
     let password_hasher = Arc::new(Argon2PasswordHasher::new()?);
     let auth_service = Arc::new(AuthService::new(user_repository, password_hasher));
     let jwt = Arc::new(JwtService::new(&settings.auth)?);

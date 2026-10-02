@@ -66,6 +66,9 @@ pub type RepositoryResult<T> = Result<T, RepositoryError>;
 //
 // `Send + Sync` supertraits: the repository is shared between threads (`Arc`) and used inside
 // spawned tasks (handlers), so every implementation must be thread-safe.
+// `automock` (mockall, test builds only) generates `MockRoomRepository` with an
+// `expect_<method>()` per method (step 022). Must be placed ABOVE `#[async_trait]`.
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait RoomRepository: Send + Sync {
     async fn find(&self, filter: &RoomFilter, page: PageRequest) -> RepositoryResult<Page<Room>>;
@@ -77,6 +80,7 @@ pub trait RoomRepository: Send + Sync {
     async fn delete(&self, id: Uuid) -> RepositoryResult<bool>;
 }
 
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait BookingRepository: Send + Sync {
     async fn find(

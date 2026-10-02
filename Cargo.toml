@@ -24,7 +24,7 @@ sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio
 thiserror = "2.0.21"
 tokio = { version = "1.53.1", features = ["full"] }
 tokio-util = "0.7.19"
-tower = "0.5.3"
+tower = { version = "0.5.3", features = ["util"] }
 tower-http = { version = "0.7.1", features = ["trace", "cors", "timeout", "compression-gzip", "compression-br", "request-id", "catch-panic", "limit", "util", "sensitive-headers"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
@@ -56,12 +56,11 @@ todo = "warn"
 # Allowed in tests via `clippy.toml`.
 unwrap_used = "warn"
 
-# sqlx macros run at compile time (they type-check every query); optimizing them speeds up
-# incremental builds noticeably – recommended by the sqlx docs.
-[profile.dev.package.sqlx-macros]
-opt-level = 3
-
 # Argon2 is deliberately expensive; unoptimized (debug) it is ~10x slower, which makes every
 # authenticated request in development slow. Optimize just this dependency.
 [profile.dev.package.argon2]
 opt-level = 3
+
+[dev-dependencies]
+mockall = "0.15.0"
+testcontainers-modules = { version = "0.15.0", features = ["postgres"] }

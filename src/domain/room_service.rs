@@ -143,4 +143,63 @@ mod tests {
 
         assert!(matches!(result, Err(DomainError::Repository(_))));
     }
+
+    // Interaction tests with mockall (step 022): instead of checking resulting state, verify
+    // which calls the service makes. Useful when the important behaviour is "X is NOT called".
+    mod with_mocks {
+        use chrono::Utc;
+
+        use super::*;
+        use crate::domain::{
+            clock::FixedClock,
+            repositories::{MockBookingRepository, MockRoomRepository},
+        };
+
+        fn service(rooms: MockRoomRepository, bookings: MockBookingRepository) -> RoomService {
+            RoomService::new(
+                Arc::new(rooms),
+                Arc::new(bookings),
+                Arc::new(FixedClock(Utc::now())),
+            )
+        }
+
+        #[tokio::test]
+        async fn room_with_upcoming_bookings_is_not_deleted() {
+            let room_id = Uuid::now_v7();
+            let mut bookings = MockBookingRepository::new();
+            bookings
+                .expect_count_active_by_room()
+                // Argument matchers: called for this room, with any timestamp.
+                .withf(move |id, _| *id == room_id)
+                .times(1)
+                .returning(|_, _| Ok(2));
+            let mut rooms = MockRoomRepository::new();
+            // The essential assertion: `delete` must never be called.
+            rooms.expect_delete().never();
+
+            let result = service(rooms, bookings).delete_room(room_id).await;
+
+            assert!(matches!(result, Err(DomainError::Conflict(_))));
+            // Expectations (`times`, `never`) are verified when the mocks are dropped.
+        }
+
+        #[tokio::test]
+        async fn room_without_bookings_is_deleted() {
+            let room_id = Uuid::now_v7();
+            let mut bookings = MockBookingRepository::new();
+            bookings
+                .expect_count_active_by_room()
+                .returning(|_, _| Ok(0));
+            let mut rooms = MockRoomRepository::new();
+            rooms
+                .expect_delete()
+                .withf(move |id| *id == room_id)
+                .times(1)
+                .returning(|_| Ok(true));
+
+            let result = service(rooms, bookings).delete_room(room_id).await;
+
+            assert!(result.is_ok());
+        }
+    }
 }
