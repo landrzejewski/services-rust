@@ -8,11 +8,12 @@ use axum::{
 use uuid::Uuid;
 
 use crate::{
-    app::AppState,
-    domain::{
-        booking::{Booking, BookingFilter},
-        room::{NewRoom, Room, RoomFilter},
+    api::dto::{
+        bookings::BookingResponse,
+        rooms::{RoomQuery, RoomRequest, RoomResponse},
     },
+    app::AppState,
+    domain::booking::BookingFilter,
 };
 
 pub fn router() -> Router<AppState> {
@@ -29,13 +30,19 @@ pub fn router() -> Router<AppState> {
 // `State<AppState>` extractor gives the handler access to the shared application state
 // (the value passed to `Router::with_state`). Destructuring `State(state)` unwraps it.
 //
-// `Query<RoomFilter>` deserializes the query string: `/rooms?minCapacity=5&name=room`.
+// `Query<RoomQuery>` deserializes the query string: `/rooms?minCapacity=5&name=room`.
 // Unknown parameters are ignored; a value of a wrong type (`minCapacity=abc`) -> 400.
+//
+// Mapping pattern used by every handler (step 008):
+//   request DTO --into()--> domain type --service--> domain result --from()--> response DTO
 async fn list_rooms(
     State(state): State<AppState>,
-    Query(filter): Query<RoomFilter>,
-) -> Json<Vec<Room>> {
-    Json(state.room_service.list_rooms(&filter).await)
+    Query(query): Query<RoomQuery>,
+) -> Json<Vec<RoomResponse>> {
+    let rooms = state.room_service.list_rooms(&query.into()).await;
+    // `into_iter().map(From::from).collect()` converts every element; the target type
+    // `Vec<RoomResponse>` is inferred from the function's return type.
+    Json(rooms.into_iter().map(RoomResponse::from).collect())
 }
 
 // `Path<Uuid>` is an *extractor*: Axum parses the `{id}` segment into `Uuid` (any type
@@ -47,25 +54,25 @@ async fn list_rooms(
 async fn get_room(State(state): State<AppState>, Path(id): Path<Uuid>) -> Response {
     // The handler only translates: domain `Option<Room>` -> HTTP 200 / 404.
     match state.room_service.get_room(id).await {
-        Some(room) => Json(room).into_response(),
+        Some(room) => Json(RoomResponse::from(room)).into_response(),
         None => room_not_found(id),
     }
 }
 
-// `Json<NewRoom>` as an argument deserializes the request body. It consumes the body,
+// `Json<RoomRequest>` as an argument deserializes the request body. It consumes the body,
 // so it must be the LAST extractor. Rejections (handler not called):
 // - missing/wrong `Content-Type` (must be `application/json`) -> 415 Unsupported Media Type
 // - malformed JSON                                             -> 400 Bad Request
 // - valid JSON, wrong shape (missing field, wrong type)        -> 422 Unprocessable Entity
-async fn create_room(State(state): State<AppState>, Json(new_room): Json<NewRoom>) -> Response {
-    let room = state.room_service.create_room(new_room).await;
+async fn create_room(State(state): State<AppState>, Json(request): Json<RoomRequest>) -> Response {
+    let room = state.room_service.create_room(request.into()).await;
 
     // REST convention for creation: 201 Created + `Location` header pointing to the new resource.
     // Headers can be added as an array of (name, value) tuples in the response tuple.
     (
         StatusCode::CREATED,
         [(header::LOCATION, format!("/api/v1/rooms/{}", room.id))],
-        Json(room),
+        Json(RoomResponse::from(room)),
     )
         .into_response()
 }
@@ -74,10 +81,10 @@ async fn create_room(State(state): State<AppState>, Json(new_room): Json<NewRoom
 async fn update_room(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    Json(data): Json<NewRoom>,
+    Json(request): Json<RoomRequest>,
 ) -> Response {
-    match state.room_service.update_room(id, data).await {
-        Some(room) => Json(room).into_response(),
+    match state.room_service.update_room(id, request.into()).await {
+        Some(room) => Json(RoomResponse::from(room)).into_response(),
         None => room_not_found(id),
     }
 }
@@ -95,13 +102,14 @@ async fn delete_room(State(state): State<AppState>, Path(id): Path<Uuid>) -> Res
 async fn list_room_bookings(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> Json<Vec<Booking>> {
+) -> Json<Vec<BookingResponse>> {
     let filter = BookingFilter {
         room_id: Some(id),
         // Struct update syntax: remaining fields from `Default` (all `None`).
         ..Default::default()
     };
-    Json(state.booking_service.list_bookings(&filter).await)
+    let bookings = state.booking_service.list_bookings(&filter).await;
+    Json(bookings.into_iter().map(BookingResponse::from).collect())
 }
 
 fn room_not_found(id: Uuid) -> Response {

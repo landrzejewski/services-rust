@@ -8,8 +8,8 @@ use axum::{
 use uuid::Uuid;
 
 use crate::{
+    api::dto::bookings::{BookingQuery, BookingResponse, CreateBookingRequest},
     app::AppState,
-    domain::booking::{Booking, BookingFilter, NewBooking},
 };
 
 pub fn router() -> Router<AppState> {
@@ -25,28 +25,29 @@ pub fn router() -> Router<AppState> {
 // `/bookings?roomId=...&status=ACTIVE`
 async fn list_bookings(
     State(state): State<AppState>,
-    Query(filter): Query<BookingFilter>,
-) -> Json<Vec<Booking>> {
-    Json(state.booking_service.list_bookings(&filter).await)
+    Query(query): Query<BookingQuery>,
+) -> Json<Vec<BookingResponse>> {
+    let bookings = state.booking_service.list_bookings(&query.into()).await;
+    Json(bookings.into_iter().map(BookingResponse::from).collect())
 }
 
 async fn get_booking(State(state): State<AppState>, Path(id): Path<Uuid>) -> Response {
     match state.booking_service.get_booking(id).await {
-        Some(booking) => Json(booking).into_response(),
+        Some(booking) => Json(BookingResponse::from(booking)).into_response(),
         None => booking_not_found(id),
     }
 }
 
 async fn create_booking(
     State(state): State<AppState>,
-    Json(new_booking): Json<NewBooking>,
+    Json(request): Json<CreateBookingRequest>,
 ) -> Response {
-    let room_id = new_booking.room_id;
-    match state.booking_service.create_booking(new_booking).await {
+    let room_id = request.room_id;
+    match state.booking_service.create_booking(request.into()).await {
         Some(booking) => (
             StatusCode::CREATED,
             [(header::LOCATION, format!("/api/v1/bookings/{}", booking.id))],
-            Json(booking),
+            Json(BookingResponse::from(booking)),
         )
             .into_response(),
         // The referenced room does not exist – the request itself is wrong, not the URL.
@@ -60,7 +61,7 @@ async fn create_booking(
 
 async fn cancel_booking(State(state): State<AppState>, Path(id): Path<Uuid>) -> Response {
     match state.booking_service.cancel_booking(id).await {
-        Some(booking) => Json(booking).into_response(),
+        Some(booking) => Json(BookingResponse::from(booking)).into_response(),
         None => booking_not_found(id),
     }
 }

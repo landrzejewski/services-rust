@@ -15,8 +15,10 @@
 //! ```
 
 mod bookings;
+pub mod dto;
 mod health;
 mod rooms;
+pub mod serde_formats;
 
 use axum::{
     Json, Router,

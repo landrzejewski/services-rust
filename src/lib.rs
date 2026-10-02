@@ -22,6 +22,5 @@ pub mod app;
 pub mod config;
 pub mod domain;
 pub mod infrastructure;
-pub mod serde_formats;
 pub mod server;
 pub mod telemetry;
