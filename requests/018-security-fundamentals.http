@@ -1,0 +1,43 @@
+@base = http://localhost:3000/api/v1
+
+### Register -> 201 (response has no password hash)
+POST {{base}}/auth/register
+Content-Type: application/json
+
+{"email": "anna@example.com", "password": "anna-password-123"}
+
+### Password too short -> 422
+POST {{base}}/auth/register
+Content-Type: application/json
+
+{"email": "bob@example.com", "password": "short"}
+
+### Login with correct credentials -> 200
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{"email": "user@booking.local", "password": "user-password-123"}
+
+### Wrong password -> 401 (same answer as for an unknown e-mail)
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{"email": "user@booking.local", "password": "wrong-password"}
+
+### Protected endpoint without credentials -> 401 + WWW-Authenticate
+GET {{base}}/users/me
+
+### HTTP Basic authentication
+GET {{base}}/users/me
+Authorization: Basic user@booking.local user-password-123
+
+### Booking for the authenticated user (no userId in the body)
+POST {{base}}/bookings
+Authorization: Basic user@booking.local user-password-123
+Content-Type: application/json
+
+{"roomId": "0199a3f0-0000-7000-8000-000000000001", "startTime": "2026-10-09T09:00:00Z", "endTime": "2026-10-09T10:00:00Z"}
+
+### My bookings
+GET {{base}}/users/me/bookings
+Authorization: Basic user@booking.local user-password-123

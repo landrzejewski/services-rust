@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use axum::{
     extract::rejection::{JsonRejection, PathRejection, QueryRejection},
-    http::StatusCode,
+    http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use validator::{ValidationErrors, ValidationErrorsKind};
@@ -72,12 +72,21 @@ impl IntoResponse for ApiError {
                 ProblemDetails::new(StatusCode::CONFLICT, "conflict", "Conflict")
                     .with_detail(message.clone())
             }
+            // 401 – "who are you?" Missing or wrong credentials. (403 = known, but not allowed – step 021.)
+            ApiError::Domain(DomainError::Unauthenticated) => ProblemDetails::new(
+                StatusCode::UNAUTHORIZED,
+                "unauthenticated",
+                "Authentication required",
+            )
+            .with_detail("missing or invalid credentials"),
             // Infrastructure failure: generic message for the client, details only in the logs.
-            ApiError::Domain(DomainError::Repository(_)) => ProblemDetails::new(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "internal-error",
-                "Internal server error",
-            ),
+            ApiError::Domain(DomainError::Repository(_) | DomainError::Internal(_)) => {
+                ProblemDetails::new(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal-error",
+                    "Internal server error",
+                )
+            }
             ApiError::Domain(DomainError::Invalid(invalid)) => validation_problem(BTreeMap::from(
                 [(invalid.field.to_string(), vec![invalid.message.clone()])],
             )),
@@ -116,7 +125,15 @@ impl IntoResponse for ApiError {
         } else {
             tracing::debug!(error = %self, status = problem.status, "request failed");
         }
-        problem.into_response()
+        let mut response = problem.into_response();
+        // RFC 9110: a 401 response MUST tell the client which authentication scheme to use.
+        if response.status() == StatusCode::UNAUTHORIZED {
+            response.headers_mut().insert(
+                header::WWW_AUTHENTICATE,
+                HeaderValue::from_static(r#"Basic realm="room-booking""#),
+            );
+        }
+        response
     }
 }
 

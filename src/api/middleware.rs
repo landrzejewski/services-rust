@@ -25,6 +25,7 @@ use tower_http::{
     compression::CompressionLayer,
     cors::CorsLayer,
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
+    sensitive_headers::SetSensitiveRequestHeadersLayer,
     timeout::TimeoutLayer,
     trace::{DefaultOnResponse, TraceLayer},
 };
@@ -45,6 +46,12 @@ pub fn apply(router: Router, settings: &HttpSettings) -> Router {
     //
     // (Calling `router.layer(a).layer(b)` repeatedly is the opposite: the LAST call is outermost.)
     let layers = ServiceBuilder::new()
+        // 0. Mark credentials as sensitive (step 018): `Debug` output of these header values
+        //    shows `Sensitive` instead of the value, so tracing/logging can't leak them.
+        .layer(SetSensitiveRequestHeadersLayer::new([
+            header::AUTHORIZATION,
+            header::COOKIE,
+        ]))
         // 1. Generate `x-request-id` (UUID) unless the client/proxy already sent one.
         .layer(SetRequestIdLayer::new(REQUEST_ID, MakeRequestUuid))
         // 2. A tracing span per request: method, URI, request id; logs status + latency at the end.

@@ -29,6 +29,14 @@ pub enum DomainError {
     #[error("{0}")]
     Conflict(String),
 
+    /// Missing or invalid credentials (step 018) -> 401.
+    #[error("authentication required")]
+    Unauthenticated,
+
+    /// Unexpected technical failure inside the domain (e.g. hashing) -> 500.
+    #[error("internal error: {0}")]
+    Internal(String),
+
     /// Technical failure below the domain – not the client's fault (-> 500).
     // No `#[from]` since step 015: the conversion is written by hand below,
     // because one repository variant maps to a *different* domain variant.

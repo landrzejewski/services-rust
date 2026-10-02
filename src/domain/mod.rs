@@ -3,14 +3,17 @@
 //! Must not depend on `axum`, HTTP status codes, SQL or any other delivery/storage detail.
 //! It can be unit-tested without a server or a database.
 
+pub mod auth_service;
 pub mod booking;
 pub mod booking_policy;
 pub mod booking_service;
 pub mod clock;
 pub mod error;
 pub mod pagination;
+pub mod password;
 pub mod repositories;
 pub mod room;
 pub mod room_service;
 pub mod time_range;
+pub mod user;
 pub mod validation;

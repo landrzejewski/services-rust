@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use crate::{
     api::{
+        authentication::AuthUser,
         dto::{
             bookings::{BookingQuery, BookingResponse, CreateBookingRequest},
             pagination::PageResponse,
@@ -50,11 +51,16 @@ async fn get_booking(
     Ok(Json(booking.into()))
 }
 
+// `AuthUser` (step 018) – only authenticated callers can book; they book for themselves.
+// Extractor order: `AuthUser` reads headers, `ValidatedJson` consumes the body (last).
 async fn create_booking(
     State(bookings): State<Arc<BookingService>>,
+    user: AuthUser,
     ValidatedJson(request): ValidatedJson<CreateBookingRequest>,
 ) -> ApiResult<impl IntoResponse> {
-    let booking = bookings.create_booking(request.try_into()?).await?;
+    let booking = bookings
+        .create_booking(request.into_new_booking(user.id)?)
+        .await?;
     Ok((
         StatusCode::CREATED,
         [(header::LOCATION, format!("/api/v1/bookings/{}", booking.id))],
@@ -62,8 +68,10 @@ async fn create_booking(
     ))
 }
 
+// Authentication required; checking that the caller OWNS the booking is authorization – step 021.
 async fn cancel_booking(
     State(bookings): State<Arc<BookingService>>,
+    _user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<BookingResponse>> {
     let booking = bookings.cancel_booking(id).await?;

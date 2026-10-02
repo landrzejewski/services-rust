@@ -12,8 +12,14 @@
 //! /api/v1/bookings                GET (list, filters), POST (create)
 //! /api/v1/bookings/{id}           GET
 //! /api/v1/bookings/{id}/cancel    POST – state transition (action)
+//! /api/v1/auth/register           POST – create account (public)
+//! /api/v1/auth/login              POST – check credentials (public; tokens from step 019)
+//! /api/v1/users/me                GET  – current user (authenticated)
+//! /api/v1/users/me/bookings       GET  – bookings of the current user (authenticated)
 //! ```
 
+mod auth;
+pub mod authentication;
 mod bookings;
 pub mod dto;
 pub mod error;
@@ -33,7 +39,8 @@ pub fn router(state: AppState) -> Router {
     // Routers of one API version merged together...
     let api_v1 = Router::new()
         .merge(rooms::router())
-        .merge(bookings::router());
+        .merge(bookings::router())
+        .merge(auth::router());
 
     Router::new()
         .merge(health::router())

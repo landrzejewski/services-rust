@@ -16,3 +16,4 @@
 pub mod bookings;
 pub mod pagination;
 pub mod rooms;
+pub mod users;

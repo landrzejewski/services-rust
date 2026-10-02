@@ -19,6 +19,7 @@ use crate::domain::{
     pagination::{Page, PageRequest},
     room::{NewRoom, Room, RoomFilter},
     time_range::TimeRange,
+    user::{Email, NewUser, User},
 };
 
 /// Storage failure.
@@ -114,6 +115,14 @@ pub trait BookingRepository: Send + Sync {
         room_id: Uuid,
         from: DateTime<Utc>,
     ) -> RepositoryResult<usize>;
+}
+
+#[async_trait]
+pub trait UserRepository: Send + Sync {
+    async fn find_by_id(&self, id: Uuid) -> RepositoryResult<Option<User>>;
+    async fn find_by_email(&self, email: &Email) -> RepositoryResult<Option<User>>;
+    /// Fails with `RepositoryError::Conflict` when the e-mail is already registered.
+    async fn insert(&self, new_user: NewUser) -> RepositoryResult<User>;
 }
 
 // ---------------------------------------------------------------------------

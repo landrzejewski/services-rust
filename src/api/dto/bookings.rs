@@ -22,7 +22,8 @@ use crate::{
 #[validate(schema(function = "validate_period", skip_on_field_errors = false))]
 pub struct CreateBookingRequest {
     pub room_id: Uuid,
-    pub user_id: Uuid,
+    // No `userId` since step 018: the owner is the authenticated caller. Taking it from the
+    // body would let anyone book in someone else's name.
     pub start_time: DateTime<Utc>,
     pub end_time: DateTime<Utc>,
     // `default` – absent field -> `u32::default()`... which is 0. Here we want 1, hence a function.
@@ -44,15 +45,15 @@ fn validate_period(request: &CreateBookingRequest) -> Result<(), ValidationError
     Ok(())
 }
 
-impl TryFrom<CreateBookingRequest> for NewBooking {
-    type Error = InvalidValue;
-
-    fn try_from(request: CreateBookingRequest) -> Result<Self, Self::Error> {
-        Ok(Self {
-            room_id: request.room_id,
-            user_id: request.user_id,
-            period: TimeRange::new(request.start_time, request.end_time)?,
-            attendees: request.attendees,
+impl CreateBookingRequest {
+    /// Request + authenticated user id -> domain command. (A plain `TryFrom` no longer fits:
+    /// part of the data comes from outside the body.)
+    pub fn into_new_booking(self, user_id: Uuid) -> Result<NewBooking, InvalidValue> {
+        Ok(NewBooking {
+            room_id: self.room_id,
+            user_id,
+            period: TimeRange::new(self.start_time, self.end_time)?,
+            attendees: self.attendees,
         })
     }
 }

@@ -4,6 +4,7 @@
 mod booking_repository;
 mod room_repository;
 mod unit_of_work;
+mod user_repository;
 
 use std::time::Duration;
 
@@ -17,6 +18,7 @@ pub use room_repository::PostgresRoomRepository;
 #[cfg(any(feature = "orm-sea", feature = "orm-diesel"))]
 pub(crate) use room_repository::{room_from_columns, to_db_int};
 pub use unit_of_work::PostgresBookingUnitOfWork;
+pub use user_repository::PostgresUserRepository;
 
 use crate::{config::DatabaseSettings, domain::repositories::RepositoryError};
 
@@ -81,6 +83,7 @@ impl From<sqlx::Error> for RepositoryError {
         {
             let message = match db_error.constraint() {
                 Some("rooms_name_idx") => "a room with this name already exists".to_string(),
+                Some("users_email_idx") => "a user with this e-mail already exists".to_string(),
                 other => format!("unique constraint violated: {}", other.unwrap_or("unknown")),
             };
             return RepositoryError::Conflict(message);
