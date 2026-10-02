@@ -23,7 +23,7 @@ pub struct AppState {
 }
 
 /// Builds the object graph (repositories -> services -> state) and the router.
-pub fn build_router(_settings: &Settings) -> Router {
+pub fn build_router(settings: &Settings) -> Router {
     let room_repository = Arc::new(InMemoryRoomRepository::with_sample_data());
     let booking_repository = Arc::new(InMemoryBookingRepository::new());
 
@@ -36,5 +36,6 @@ pub fn build_router(_settings: &Settings) -> Router {
         booking_service,
     };
 
-    api::router(state)
+    // Middleware wraps the complete router (all routes + fallbacks), step 011.
+    api::middleware::apply(api::router(state), &settings.http)
 }

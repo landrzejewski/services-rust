@@ -19,6 +19,7 @@ use serde::Deserialize;
 pub struct Settings {
     pub server: ServerSettings,
     pub runtime: RuntimeSettings,
+    pub http: HttpSettings,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -33,6 +34,19 @@ pub struct ServerSettings {
 pub struct RuntimeSettings {
     /// Number of Tokio worker threads; `None` (key absent) = number of CPU cores.
     pub worker_threads: Option<usize>,
+}
+
+/// HTTP middleware settings (step 011).
+#[derive(Debug, Clone, Deserialize)]
+pub struct HttpSettings {
+    /// Requests running longer are aborted with 408.
+    pub request_timeout_secs: u64,
+    /// Max accepted request body size; larger bodies -> 413.
+    pub body_limit_bytes: usize,
+    /// Browser origins allowed to call the API (CORS). Empty = cross-origin calls blocked.
+    pub cors_allowed_origins: Vec<String>,
+    /// Requests slower than this are logged as warnings.
+    pub slow_request_threshold_ms: u64,
 }
 
 impl ServerSettings {
@@ -53,11 +67,15 @@ impl Settings {
             // APP_SERVER__PORT -> server.port: prefix `APP` + "_", nested keys separated with "__"
             // (single "_" can't be used as a separator because key names contain it).
             // `try_parsing` converts "8080" to a number, "true" to bool etc.
+            // Lists from env: `APP_HTTP__CORS_ALLOWED_ORIGINS=http://a.com,http://b.com`.
+            // `with_list_parse_key` marks which keys are lists (others stay plain strings).
             .add_source(
                 Environment::with_prefix("APP")
                     .prefix_separator("_")
                     .separator("__")
-                    .try_parsing(true),
+                    .try_parsing(true)
+                    .list_separator(",")
+                    .with_list_parse_key("http.cors_allowed_origins"),
             )
             .build()?
             .try_deserialize()

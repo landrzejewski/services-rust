@@ -9,3 +9,10 @@ shutdown_grace_period_secs = 10
 
 [runtime]
 # worker_threads = 4   # absent = number of CPU cores
+
+[http]
+request_timeout_secs = 30
+body_limit_bytes = 65536
+# Frontend dev servers allowed to call the API from a browser.
+cors_allowed_origins = ["http://localhost:5173"]
+slow_request_threshold_ms = 500

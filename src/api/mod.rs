@@ -19,6 +19,7 @@ pub mod dto;
 pub mod error;
 pub mod extractors;
 mod health;
+pub mod middleware;
 pub mod problem;
 mod rooms;
 pub mod serde_formats;
