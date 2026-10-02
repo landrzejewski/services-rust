@@ -1,0 +1,11 @@
+### List rooms (from the in-memory repository)
+GET http://localhost:3000/rooms
+
+### Single room
+GET http://localhost:3000/rooms/2
+
+### Missing room -> 404
+GET http://localhost:3000/rooms/9
+
+### Health
+GET http://localhost:3000/health

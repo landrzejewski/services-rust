@@ -1,0 +1,7 @@
+//! Domain layer: business models and business operations.
+//!
+//! Must not depend on `axum`, HTTP status codes, SQL or any other delivery/storage detail.
+//! It can be unit-tested without a server or a database.
+
+pub mod room;
+pub mod room_service;
