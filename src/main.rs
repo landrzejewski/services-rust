@@ -1,10 +1,21 @@
-//! Room Booking Service – step 001: the smallest useful Axum application.
+//! Room Booking Service.
 //!
-//! Building blocks shown here:
+//! Step 001 – the smallest useful Axum application:
 //! - `Router`      – maps (HTTP method, path) pairs to handlers,
 //! - handlers      – plain `async fn`s; their arguments are *extractors*,
 //!   their return type must implement `IntoResponse`,
 //! - `axum::serve` – glues a `tokio::net::TcpListener` with the router (hyper runs underneath).
+//!
+//! Step 002 – Tokio runtime:
+//! - the runtime is built manually (instead of `#[tokio::main]`) to show its configuration,
+//! - a background task is spawned next to the HTTP server,
+//! - `runtime_demo` module shows `join!`, `select!`, `spawn_blocking` and a blocking anti-pattern.
+
+// Declares the `src/runtime_demo.rs` module. Modules are private by default;
+// `main.rs` can still use their `pub` items.
+mod runtime_demo;
+
+use std::time::Duration;
 
 use axum::{
     Json, Router,
@@ -15,18 +26,55 @@ use axum::{
 };
 use serde::Serialize;
 
-// `#[tokio::main]` turns `async fn main` into a regular `fn main` that starts
-// the Tokio runtime and blocks on the future. Axum has no runtime of its own –
-// it relies on Tokio for networking, timers and task scheduling (details in step 002).
-#[tokio::main]
-async fn main() {
-    // Router is built with a fluent API. Every `.route()` call registers a path
-    // and a `MethodRouter` (here `get(...)`, later also `post`, `put`, `delete`...).
-    // Path parameters use the `{name}` syntax (Axum 0.8+; older versions used `:name`).
+// In step 001 we used `#[tokio::main]`. That attribute is only syntactic sugar –
+// it expands to roughly:
+//
+//     fn main() {
+//         tokio::runtime::Builder::new_multi_thread()
+//             .enable_all()
+//             .build()
+//             .unwrap()
+//             .block_on(async { /* body of async main */ })
+//     }
+//
+// The attribute also accepts options, e.g. `#[tokio::main(flavor = "multi_thread", worker_threads = 2)]`
+// or `#[tokio::main(flavor = "current_thread")]`. Building the runtime by hand gives full control
+// (thread names, stack size, blocking pool size, hooks) – useful when tuning a service.
+fn main() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        // Number of worker threads executing async tasks. Default: number of CPU cores.
+        // Deliberately small here so the blocking anti-pattern (`/demo/blocking`) is easy to observe.
+        .worker_threads(2)
+        // Upper limit of extra threads used by `spawn_blocking` (default 512).
+        .max_blocking_threads(16)
+        // Names are visible in debuggers, profilers and `top -H`.
+        .thread_name("booking-worker")
+        // Enables the I/O driver (sockets) and the time driver (sleep, interval, timeout).
+        // Without it `TcpListener` or `tokio::time::sleep` would panic.
+        .enable_all()
+        .build()
+        .expect("failed to build Tokio runtime");
+
+    // `block_on` runs the future on the current (main) thread until it completes.
+    // Everything spawned inside it runs on the worker threads.
+    runtime.block_on(run());
+}
+
+// The async entry point of the application – exactly what `#[tokio::main] async fn main` used to contain.
+async fn run() {
+    // `tokio::spawn` starts an independent *task* (a lightweight, runtime-managed "green thread").
+    // The task runs concurrently with the server. Spawned futures must be `Send + 'static`
+    // because the scheduler may move them between worker threads.
+    // The returned `JoinHandle` can be awaited to get the task's result; dropping it
+    // does NOT cancel the task (use `handle.abort()` for that).
+    let _reporter = tokio::spawn(occupancy_reporter(Duration::from_secs(60)));
+
     let app = Router::new()
         .route("/", get(index))
         .route("/health", get(health))
-        .route("/rooms/{id}", get(room_by_id));
+        .route("/rooms/{id}", get(room_by_id))
+        // `merge` combines two routers into one – the demo routes live in their own module.
+        .merge(runtime_demo::router());
 
     // Bind a TCP socket. `0.0.0.0` accepts connections on all interfaces
     // (needed later inside containers); use `127.0.0.1` to listen locally only.
@@ -37,8 +85,22 @@ async fn main() {
     println!("listening on http://{}", listener.local_addr().unwrap());
 
     // `axum::serve` accepts connections and drives each one with hyper,
-    // passing every request to the router. It runs until the process is stopped.
+    // passing every request to the router. Each connection is handled in its own Tokio task,
+    // so many requests are processed concurrently on the worker threads.
     axum::serve(listener, app).await.expect("server error");
+}
+
+// A periodic background job. Later in the course this could e.g. expire stale bookings.
+async fn occupancy_reporter(period: Duration) {
+    // `interval` yields ticks at a fixed rate; the first tick completes immediately.
+    // Unlike `sleep` in a loop, it compensates for the time spent doing the work.
+    let mut interval = tokio::time::interval(period);
+    loop {
+        interval.tick().await;
+        // `.await` is a suspension point: while waiting for the next tick the task
+        // gives the worker thread back to the scheduler, so it costs nothing.
+        println!("[reporter] occupancy report generated");
+    }
 }
 
 // The simplest handler: no extractors, returns `Html<&str>`.

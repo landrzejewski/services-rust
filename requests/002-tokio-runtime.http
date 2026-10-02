@@ -1,0 +1,20 @@
+### join! – two simulated calls (100 ms + 150 ms) run concurrently -> elapsed_ms ≈ 150
+GET http://localhost:3000/rooms/1/summary
+
+### select! – calendar answers before the 500 ms deadline -> 200
+GET http://localhost:3000/rooms/1/availability
+
+### select! – calendar too slow -> 504 Gateway Timeout
+GET http://localhost:3000/rooms/1/availability?latency_ms=800
+
+### spawn_blocking – CPU-heavy work on the blocking pool
+GET http://localhost:3000/reports/occupancy?iterations=200000000
+
+### ANTI-PATTERN – blocks a worker thread for 5 s (run twice in parallel, then call /health)
+GET http://localhost:3000/demo/blocking
+
+### Correct async sleep – does not block the worker
+GET http://localhost:3000/demo/non-blocking
+
+### Health check
+GET http://localhost:3000/health
