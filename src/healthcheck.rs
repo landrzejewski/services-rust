@@ -30,9 +30,8 @@ fn probe(address: SocketAddr) -> std::io::Result<()> {
     let timeout = Duration::from_secs(2);
     let mut stream = TcpStream::connect_timeout(&address, timeout)?;
     stream.set_read_timeout(Some(timeout))?;
-    stream.write_all(
-        b"GET /health/live HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
-    )?;
+    stream
+        .write_all(b"GET /health/live HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")?;
 
     // Only the status line matters: "HTTP/1.1 200 OK".
     let mut buffer = [0u8; 32];
