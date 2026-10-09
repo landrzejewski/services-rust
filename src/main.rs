@@ -14,19 +14,35 @@ use axum::{
     routing::get,
 };
 use serde::Serialize;
+use tokio::process::Command;
+use tower_http::services::ServeDir;
 
 // `#[tokio::main]` turns `async fn main` into a regular `fn main` that starts
 // the Tokio runtime and blocks on the future. Axum has no runtime of its own –
 // it relies on Tokio for networking, timers and task scheduling (details in step 002).
 #[tokio::main]
 async fn main() {
+   /* let result = Command::new("ls")
+        .arg("-la")
+        .args(["--color=never"])
+        .current_dir("/Users/lukas/Desktop/services-rust")
+        .env("LANGUAGE", "en")
+        .output()
+        .await;
+
+   println!("{:?}", result.unwrap());*/
+
+
     // Router is built with a fluent API. Every `.route()` call registers a path
     // and a `MethodRouter` (here `get(...)`, later also `post`, `put`, `delete`...).
     // Path parameters use the `{name}` syntax (Axum 0.8+; older versions used `:name`).
     let app = Router::new()
-        .route("/", get(index))
+        //.route("/", get(index))
         .route("/health", get(health))
-        .route("/rooms/{id}", get(room_by_id));
+        .route("/rooms/{id}", get(room_by_id))
+        .route("/git", get(git_version))
+        //.nest_service("/", ServeDir::new("static"));
+        .fallback_service(ServeDir::new("static"));
 
     // Bind a TCP socket. `0.0.0.0` accepts connections on all interfaces
     // (needed later inside containers); use `127.0.0.1` to listen locally only.
@@ -86,4 +102,14 @@ async fn room_by_id(Path(id): Path<u64>) -> impl IntoResponse {
         // (`Response`), which is required because `if`/`else` arms must match.
         (StatusCode::NOT_FOUND, format!("room {id} not found")).into_response()
     }
+}
+
+async fn git_version() -> Result<String, (StatusCode, String)> {
+    let output = Command::new("git")
+        .arg("--version")
+        .output()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }

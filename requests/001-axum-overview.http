@@ -15,3 +15,6 @@ GET http://localhost:3000/rooms/abc
 
 ### Unknown route -> 404 (no handler matched)
 GET http://localhost:3000/unknown
+
+### Git version
+GET http://localhost:3000/git
