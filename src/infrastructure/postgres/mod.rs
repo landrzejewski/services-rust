@@ -3,7 +3,7 @@
 
 mod booking_repository;
 mod room_repository;
-mod unit_of_work;
+mod transaction;
 
 use std::time::Duration;
 
@@ -12,7 +12,7 @@ use sqlx::{PgPool, postgres::PgPoolOptions};
 
 pub use booking_repository::PostgresBookingRepository;
 pub use room_repository::PostgresRoomRepository;
-pub use unit_of_work::PostgresBookingUnitOfWork;
+pub use transaction::PostgresTxManager;
 
 use crate::{config::DatabaseSettings, domain::repositories::RepositoryError};
 

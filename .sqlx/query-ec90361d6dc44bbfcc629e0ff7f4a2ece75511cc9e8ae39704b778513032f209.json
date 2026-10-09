@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, name, description, capacity, opens_at, closes_at\n        FROM rooms WHERE id = $1\n        FOR UPDATE\n        ",
+  "query": "\n            SELECT id, name, description, capacity, opens_at, closes_at\n            FROM rooms WHERE id = $1\n            FOR UPDATE\n            ",
   "describe": {
     "columns": [
       {
@@ -84,5 +84,5 @@
       false
     ]
   },
-  "hash": "4caf6ab69f633efbfb9c665090416b6b499119f3d4c823e3b1b34224502b3c61"
+  "hash": "ec90361d6dc44bbfcc629e0ff7f4a2ece75511cc9e8ae39704b778513032f209"
 }

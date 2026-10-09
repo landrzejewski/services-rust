@@ -1,13 +1,15 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::{PgExecutor, PgPool};
+use sqlx::PgPool;
 use uuid::Uuid;
 
+use super::transaction::connection;
 use crate::domain::{
     booking::{Booking, BookingFilter, BookingStatus, NewBooking},
     pagination::{Page, PageRequest},
     repositories::{BookingRepository, RepositoryError, RepositoryResult},
     time_range::TimeRange,
+    transaction::Transaction,
 };
 
 /// `BookingRepository` backed by PostgreSQL.
@@ -143,10 +145,6 @@ impl BookingRepository for PostgresBookingRepository {
         row.map(Booking::try_from).transpose()
     }
 
-    async fn insert(&self, new_booking: NewBooking) -> RepositoryResult<Booking> {
-        insert_booking(&self.pool, new_booking).await
-    }
-
     async fn update_status(
         &self,
         id: Uuid,
@@ -166,24 +164,98 @@ impl BookingRepository for PostgresBookingRepository {
         row.map(Booking::try_from).transpose()
     }
 
+    // Transactional operations (step 016): `connection(tx)?` – the connection of the caller's
+    // transaction instead of `&self.pool`, so all statements of the use case run in the same
+    // transaction and see the locks taken earlier in it.
+
+    async fn insert(
+        &self,
+        tx: &mut dyn Transaction,
+        new_booking: NewBooking,
+    ) -> RepositoryResult<Booking> {
+        let row = sqlx::query_as!(
+            BookingRow,
+            r#"
+            INSERT INTO bookings (id, room_id, user_id, start_time, end_time, attendees, status)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING id, room_id, user_id, start_time, end_time, attendees, status, created_at
+            "#,
+            Uuid::now_v7(),
+            new_booking.room_id,
+            new_booking.user_id,
+            new_booking.period.start(),
+            new_booking.period.end(),
+            i32::try_from(new_booking.attendees).unwrap_or(i32::MAX),
+            status_to_db(BookingStatus::Active),
+        )
+        .fetch_one(connection(tx)?)
+        // An overlap that slipped past the application checks violates `bookings_no_overlap`
+        // -> SQLSTATE 23P01 -> `RepositoryError::Conflict` (see `From<sqlx::Error>`).
+        .await?;
+        row.try_into()
+    }
+
+    async fn lock_user(&self, tx: &mut dyn Transaction, user_id: Uuid) -> RepositoryResult<()> {
+        // Advisory lock – an application-defined lock on a number, released automatically at
+        // the end of the transaction (`_xact_`). There is no "user" row to lock with FOR UPDATE
+        // (users arrive in step 018), so the user id is hashed into a 64-bit lock key.
+        sqlx::query!(
+            "SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))",
+            user_id.to_string()
+        )
+        .execute(connection(tx)?)
+        .await?;
+        Ok(())
+    }
+
     async fn find_active_overlapping(
         &self,
+        tx: &mut dyn Transaction,
         room_id: Uuid,
         period: &TimeRange,
     ) -> RepositoryResult<Vec<Booking>> {
-        select_active_overlapping(&self.pool, room_id, period).await
+        // Half-open interval overlap: existing.start < new.end AND existing.end > new.start.
+        // Served by the partial index `bookings_room_period_idx`.
+        let rows = sqlx::query_as!(
+            BookingRow,
+            r#"
+            SELECT id, room_id, user_id, start_time, end_time, attendees, status, created_at
+            FROM bookings
+            WHERE room_id = $1 AND status = 'ACTIVE'
+              AND start_time < $3 AND end_time > $2
+            ORDER BY start_time
+            "#,
+            room_id,
+            period.start(),
+            period.end(),
+        )
+        .fetch_all(connection(tx)?)
+        .await?;
+        to_domain(rows)
     }
 
     async fn count_active_by_user(
         &self,
+        tx: &mut dyn Transaction,
         user_id: Uuid,
         from: DateTime<Utc>,
     ) -> RepositoryResult<usize> {
-        count_active_by_user(&self.pool, user_id, from).await
+        let count = sqlx::query_scalar!(
+            r#"
+            SELECT count(*) AS "count!" FROM bookings
+            WHERE user_id = $1 AND status = 'ACTIVE' AND end_time > $2
+            "#,
+            user_id,
+            from,
+        )
+        .fetch_one(connection(tx)?)
+        .await?;
+        Ok(count_to_usize(count))
     }
 
     async fn count_active_by_room(
         &self,
+        tx: &mut dyn Transaction,
         room_id: Uuid,
         from: DateTime<Utc>,
     ) -> RepositoryResult<usize> {
@@ -195,85 +267,8 @@ impl BookingRepository for PostgresBookingRepository {
             room_id,
             from,
         )
-        .fetch_one(&self.pool)
+        .fetch_one(connection(tx)?)
         .await?;
         Ok(count_to_usize(count))
     }
-}
-
-// ---------------------------------------------------------------------------
-// Queries shared by the repository (pool) and the unit of work (transaction), step 016.
-//
-// `impl PgExecutor<'_>` accepts anything that can run a query: `&PgPool` (borrows a pooled
-// connection per query) or `&mut PgConnection` – e.g. `&mut *transaction` – where all queries
-// run on the same connection inside the same transaction. One query, two contexts.
-// ---------------------------------------------------------------------------
-
-pub(super) async fn insert_booking(
-    executor: impl PgExecutor<'_>,
-    new_booking: NewBooking,
-) -> RepositoryResult<Booking> {
-    let row = sqlx::query_as!(
-        BookingRow,
-        r#"
-        INSERT INTO bookings (id, room_id, user_id, start_time, end_time, attendees, status)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        RETURNING id, room_id, user_id, start_time, end_time, attendees, status, created_at
-        "#,
-        Uuid::now_v7(),
-        new_booking.room_id,
-        new_booking.user_id,
-        new_booking.period.start(),
-        new_booking.period.end(),
-        i32::try_from(new_booking.attendees).unwrap_or(i32::MAX),
-        status_to_db(BookingStatus::Active),
-    )
-    .fetch_one(executor)
-    // An overlap that slipped past the application checks violates `bookings_no_overlap`
-    // -> SQLSTATE 23P01 -> `RepositoryError::Conflict` (see `From<sqlx::Error>`).
-    .await?;
-    row.try_into()
-}
-
-pub(super) async fn select_active_overlapping(
-    executor: impl PgExecutor<'_>,
-    room_id: Uuid,
-    period: &TimeRange,
-) -> RepositoryResult<Vec<Booking>> {
-    // Half-open interval overlap: existing.start < new.end AND existing.end > new.start.
-    // Served by the partial index `bookings_room_period_idx`.
-    let rows = sqlx::query_as!(
-        BookingRow,
-        r#"
-        SELECT id, room_id, user_id, start_time, end_time, attendees, status, created_at
-        FROM bookings
-        WHERE room_id = $1 AND status = 'ACTIVE'
-          AND start_time < $3 AND end_time > $2
-        ORDER BY start_time
-        "#,
-        room_id,
-        period.start(),
-        period.end(),
-    )
-    .fetch_all(executor)
-    .await?;
-    to_domain(rows)
-}
-
-pub(super) async fn count_active_by_user(
-    executor: impl PgExecutor<'_>,
-    user_id: Uuid,
-    from: DateTime<Utc>,
-) -> RepositoryResult<usize> {
-    let count = sqlx::query_scalar!(
-        r#"
-        SELECT count(*) AS "count!" FROM bookings
-        WHERE user_id = $1 AND status = 'ACTIVE' AND end_time > $2
-        "#,
-        user_id,
-        from,
-    )
-    .fetch_one(executor)
-    .await?;
-    Ok(count_to_usize(count))
 }

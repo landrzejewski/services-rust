@@ -1,32 +1,29 @@
-use std::{collections::HashMap, sync::RwLock};
+use std::{
+    collections::HashMap,
+    sync::{Arc, RwLock},
+};
 
 use chrono::NaiveTime;
 use uuid::Uuid;
 
 use async_trait::async_trait;
 
+use super::transaction::in_memory;
 use crate::domain::{
     pagination::{Page, PageRequest},
     repositories::{RepositoryResult, RoomRepository},
     room::{NewRoom, OpeningHours, Room, RoomFilter, RoomName},
+    transaction::Transaction,
 };
 
-// Repository – hides *how* data is stored; offers collection-like operations to the domain.
-//
-// Handlers run concurrently on many threads, so shared mutable data needs synchronization.
-// `RwLock` allows many readers or one writer at a time.
-//
-// `std::sync::RwLock` (not `tokio::sync::RwLock`) is the right choice here: the lock is held only
-// for a few nanoseconds and NEVER across an `.await`. The async lock is needed only when a guard
-// must live across `.await` points; it is slower otherwise.
 pub struct InMemoryRoomRepository {
-    rooms: RwLock<HashMap<Uuid, Room>>,
+    rooms: Arc<RwLock<HashMap<Uuid, Room>>>,
 }
 
 impl InMemoryRoomRepository {
     pub fn new() -> Self {
         Self {
-            rooms: RwLock::new(HashMap::new()),
+            rooms: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -118,13 +115,29 @@ impl RoomRepository for InMemoryRoomRepository {
         Ok(Some(room.clone()))
     }
 
-    async fn delete(&self, id: Uuid) -> RepositoryResult<bool> {
-        Ok(self
+    async fn find_by_id_for_update(
+        &self,
+        tx: &mut dyn Transaction,
+        id: Uuid,
+    ) -> RepositoryResult<Option<Room>> {
+        // The global lock of `InMemoryTxManager` already serializes transactions – a plain read
+        // is enough. `in_memory(tx)?` only checks the transaction belongs to this storage.
+        in_memory(tx)?;
+        self.find_by_id(id).await
+    }
+
+    async fn delete(&self, tx: &mut dyn Transaction, id: Uuid) -> RepositoryResult<bool> {
+        let tx = in_memory(tx)?;
+        let exists = self
             .rooms
-            .write()
+            .read()
             .expect("rooms lock poisoned")
-            .remove(&id)
-            .is_some())
+            .contains_key(&id);
+        let rooms = Arc::clone(&self.rooms);
+        tx.defer(move || {
+            rooms.write().expect("rooms lock poisoned").remove(&id);
+        });
+        Ok(exists)
     }
 }
 

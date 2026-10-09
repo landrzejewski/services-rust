@@ -1,15 +1,3 @@
-//! Repository traits – the domain's *ports* to storage.
-//!
-//! Dependency inversion (step 012): the domain declares WHAT it needs from storage;
-//! infrastructure provides HOW (in-memory now, PostgreSQL from step 015). Dependencies now point
-//! from infrastructure to domain, never the other way round:
-//!
-//! ```text
-//!   domain::RoomService ──uses──▶ domain::RoomRepository (trait)
-//!                                        ▲ implements
-//!   infrastructure::InMemoryRoomRepository / PostgresRoomRepository
-//! ```
-
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
@@ -19,13 +7,9 @@ use crate::domain::{
     pagination::{Page, PageRequest},
     room::{NewRoom, Room, RoomFilter},
     time_range::TimeRange,
+    transaction::Transaction,
 };
 
-/// Storage failure.
-///
-/// The trait must express that any implementation can fail, even if the in-memory one never
-/// does. The domain doesn't depend on driver-specific error types like `sqlx::Error`; adapters
-/// translate them into these variants (step 015).
 #[derive(Debug, thiserror::Error)]
 pub enum RepositoryError {
     /// The storage rejected the change because it conflicts with existing data
@@ -72,8 +56,22 @@ pub trait RoomRepository: Send + Sync {
     async fn insert(&self, new_room: NewRoom) -> RepositoryResult<Room>;
     /// `None` when the room does not exist.
     async fn update(&self, id: Uuid, data: NewRoom) -> RepositoryResult<Option<Room>>;
+
+    // Operations taking `&mut dyn Transaction` (step 016) run inside the caller's transaction.
+    // The service starts it with `TxManager::begin` and passes it down; the repository never
+    // decides where a transaction begins or ends.
+
+    /// Loads the room and locks it until the end of the transaction (`SELECT ... FOR UPDATE`).
+    /// Concurrent transactions locking the same room wait – bookings of one room and its
+    /// deletion are serialized.
+    async fn find_by_id_for_update(
+        &self,
+        tx: &mut dyn Transaction,
+        id: Uuid,
+    ) -> RepositoryResult<Option<Room>>;
+
     /// `false` when the room did not exist.
-    async fn delete(&self, id: Uuid) -> RepositoryResult<bool>;
+    async fn delete(&self, tx: &mut dyn Transaction, id: Uuid) -> RepositoryResult<bool>;
 }
 
 #[async_trait]
@@ -84,19 +82,30 @@ pub trait BookingRepository: Send + Sync {
         page: PageRequest,
     ) -> RepositoryResult<Page<Booking>>;
     async fn find_by_id(&self, id: Uuid) -> RepositoryResult<Option<Booking>>;
-    async fn insert(&self, new_booking: NewBooking) -> RepositoryResult<Booking>;
     async fn update_status(
         &self,
         id: Uuid,
         status: BookingStatus,
     ) -> RepositoryResult<Option<Booking>>;
 
-    // Queries needed by business rules (step 013). Dedicated methods instead of loading all
+    // Transactional operations of the "create booking" / "delete room" use cases (step 016).
+    // Queries needed by business rules (step 013) are dedicated methods instead of loading all
     // bookings and filtering in Rust: a database answers them with one indexed query.
+
+    async fn insert(
+        &self,
+        tx: &mut dyn Transaction,
+        new_booking: NewBooking,
+    ) -> RepositoryResult<Booking>;
+
+    /// Serializes concurrent bookings of the same user (for the per-user limit), even when they
+    /// target different rooms. Released at the end of the transaction.
+    async fn lock_user(&self, tx: &mut dyn Transaction, user_id: Uuid) -> RepositoryResult<()>;
 
     /// Active bookings of the room whose period overlaps `period`.
     async fn find_active_overlapping(
         &self,
+        tx: &mut dyn Transaction,
         room_id: Uuid,
         period: &TimeRange,
     ) -> RepositoryResult<Vec<Booking>>;
@@ -104,6 +113,7 @@ pub trait BookingRepository: Send + Sync {
     /// Number of active bookings of the user that end after `from` (upcoming or ongoing).
     async fn count_active_by_user(
         &self,
+        tx: &mut dyn Transaction,
         user_id: Uuid,
         from: DateTime<Utc>,
     ) -> RepositoryResult<usize>;
@@ -111,56 +121,8 @@ pub trait BookingRepository: Send + Sync {
     /// Number of active bookings of the room that end after `from`.
     async fn count_active_by_room(
         &self,
+        tx: &mut dyn Transaction,
         room_id: Uuid,
         from: DateTime<Utc>,
     ) -> RepositoryResult<usize>;
-}
-
-// ---------------------------------------------------------------------------
-// Unit of work (step 016)
-// ---------------------------------------------------------------------------
-
-/// Starts a transaction for the "create booking" use case.
-///
-/// The check-then-insert sequence in `BookingService::create_booking` must be atomic:
-/// all reads and the insert happen in ONE database transaction, protected by locks, so two
-/// concurrent requests can't both pass the checks. The domain describes WHAT it needs
-/// (a transactional set of operations); the adapter decides HOW (PostgreSQL transaction + locks).
-#[async_trait]
-pub trait BookingUnitOfWork: Send + Sync {
-    async fn begin(&self) -> RepositoryResult<Box<dyn BookingTransaction>>;
-}
-
-/// Operations available inside the transaction.
-///
-/// Dropping the value without calling `commit` rolls everything back – an early return with `?`
-/// after a failed business rule automatically undoes the transaction.
-//
-// Only `Send` (no `Sync`): a transaction is used by one task at a time through `&mut self`.
-#[async_trait]
-pub trait BookingTransaction: Send {
-    /// Loads the room and locks it until the end of the transaction (`SELECT ... FOR UPDATE`).
-    /// Concurrent bookings of the same room wait here – the overlap check becomes race-free.
-    async fn lock_room(&mut self, room_id: Uuid) -> RepositoryResult<Option<Room>>;
-
-    /// Serializes concurrent bookings of the same user (for the per-user limit), even when they
-    /// target different rooms.
-    async fn lock_user(&mut self, user_id: Uuid) -> RepositoryResult<()>;
-
-    async fn find_active_overlapping(
-        &mut self,
-        room_id: Uuid,
-        period: &TimeRange,
-    ) -> RepositoryResult<Vec<Booking>>;
-
-    async fn count_active_by_user(
-        &mut self,
-        user_id: Uuid,
-        from: DateTime<Utc>,
-    ) -> RepositoryResult<usize>;
-
-    async fn insert_booking(&mut self, new_booking: NewBooking) -> RepositoryResult<Booking>;
-
-    /// `self: Box<Self>` – consumes the transaction; it can't be used after commit.
-    async fn commit(self: Box<Self>) -> RepositoryResult<()>;
 }

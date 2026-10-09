@@ -1,40 +1,37 @@
-use std::{collections::HashMap, sync::RwLock};
+use std::{
+    collections::HashMap,
+    sync::{Arc, RwLock},
+};
 
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use async_trait::async_trait;
 
+use super::transaction::in_memory;
 use crate::domain::{
     booking::{Booking, BookingFilter, BookingStatus, NewBooking},
     pagination::{Page, PageRequest},
     repositories::{BookingRepository, RepositoryResult},
     time_range::TimeRange,
+    transaction::Transaction,
 };
 
 // Same structure as `InMemoryRoomRepository` – see comments there.
 pub struct InMemoryBookingRepository {
-    bookings: RwLock<HashMap<Uuid, Booking>>,
+    bookings: Arc<RwLock<HashMap<Uuid, Booking>>>,
 }
 
 impl InMemoryBookingRepository {
     pub fn new() -> Self {
         Self {
-            bookings: RwLock::new(HashMap::new()),
+            bookings: Arc::new(RwLock::new(HashMap::new())),
         }
-    }
-
-    /// Stores a complete booking (used by `InMemoryBookingUnitOfWork` on commit).
-    pub(super) fn put(&self, booking: Booking) {
-        self.bookings
-            .write()
-            .expect("bookings lock poisoned")
-            .insert(booking.id, booking);
     }
 }
 
 /// New active booking with generated id and timestamp – what the database does on INSERT.
-pub(super) fn build_booking(new_booking: NewBooking) -> Booking {
+fn build_booking(new_booking: NewBooking) -> Booking {
     Booking {
         id: Uuid::now_v7(),
         room_id: new_booking.room_id,
@@ -48,12 +45,6 @@ pub(super) fn build_booking(new_booking: NewBooking) -> Booking {
 
 #[async_trait]
 impl BookingRepository for InMemoryBookingRepository {
-    async fn insert(&self, new_booking: NewBooking) -> RepositoryResult<Booking> {
-        let booking = build_booking(new_booking);
-        self.put(booking.clone());
-        Ok(booking)
-    }
-
     async fn find_by_id(&self, id: Uuid) -> RepositoryResult<Option<Booking>> {
         Ok(self
             .bookings
@@ -91,11 +82,41 @@ impl BookingRepository for InMemoryBookingRepository {
         Ok(Some(booking.clone()))
     }
 
+    // Transactional operations (step 016). Reads see committed data; the global lock of
+    // `InMemoryTxManager` keeps them consistent until commit. `in_memory(tx)?` rejects
+    // transactions of another storage.
+
+    async fn insert(
+        &self,
+        tx: &mut dyn Transaction,
+        new_booking: NewBooking,
+    ) -> RepositoryResult<Booking> {
+        let tx = in_memory(tx)?;
+        let booking = build_booking(new_booking);
+        let bookings = Arc::clone(&self.bookings);
+        let stored = booking.clone();
+        tx.defer(move || {
+            bookings
+                .write()
+                .expect("bookings lock poisoned")
+                .insert(stored.id, stored);
+        });
+        Ok(booking)
+    }
+
+    async fn lock_user(&self, tx: &mut dyn Transaction, _user_id: Uuid) -> RepositoryResult<()> {
+        // The global lock already serializes everything.
+        in_memory(tx)?;
+        Ok(())
+    }
+
     async fn find_active_overlapping(
         &self,
+        tx: &mut dyn Transaction,
         room_id: Uuid,
         period: &TimeRange,
     ) -> RepositoryResult<Vec<Booking>> {
+        in_memory(tx)?;
         Ok(self
             .bookings
             .read()
@@ -108,9 +129,11 @@ impl BookingRepository for InMemoryBookingRepository {
 
     async fn count_active_by_user(
         &self,
+        tx: &mut dyn Transaction,
         user_id: Uuid,
         from: DateTime<Utc>,
     ) -> RepositoryResult<usize> {
+        in_memory(tx)?;
         Ok(self
             .bookings
             .read()
@@ -122,9 +145,11 @@ impl BookingRepository for InMemoryBookingRepository {
 
     async fn count_active_by_room(
         &self,
+        tx: &mut dyn Transaction,
         room_id: Uuid,
         from: DateTime<Utc>,
     ) -> RepositoryResult<usize> {
+        in_memory(tx)?;
         Ok(self
             .bookings
             .read()

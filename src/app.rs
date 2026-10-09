@@ -17,11 +17,12 @@ use crate::{
         booking_policy::BookingPolicy,
         booking_service::BookingService,
         clock::{Clock, SystemClock},
-        repositories::{BookingRepository, BookingUnitOfWork, RoomRepository},
+        repositories::{BookingRepository, RoomRepository},
         room_service::RoomService,
+        transaction::TxManager,
     },
     infrastructure::postgres::{
-        self, PostgresBookingRepository, PostgresBookingUnitOfWork, PostgresRoomRepository,
+        self, PostgresBookingRepository, PostgresRoomRepository, PostgresTxManager,
     },
 };
 
@@ -62,8 +63,10 @@ pub async fn build_state(settings: &Settings) -> anyhow::Result<AppState> {
         Arc::new(PostgresRoomRepository::new(db.clone()));
     let booking_repository: Arc<dyn BookingRepository> =
         Arc::new(PostgresBookingRepository::new(db.clone()));
-    let booking_unit_of_work: Arc<dyn BookingUnitOfWork> =
-        Arc::new(PostgresBookingUnitOfWork::new(db.clone()));
+    // One transaction manager for all services (step 016). It must match the repositories'
+    // storage – `PostgresTxManager` with `Postgres*Repository` – which `dyn` can't enforce at
+    // compile time (a mismatch fails at runtime with `RepositoryError::Unexpected`).
+    let tx_manager: Arc<dyn TxManager> = Arc::new(PostgresTxManager::new(db.clone()));
 
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
 
@@ -77,11 +80,13 @@ pub async fn build_state(settings: &Settings) -> anyhow::Result<AppState> {
     let room_service = Arc::new(RoomService::new(
         Arc::clone(&room_repository),
         Arc::clone(&booking_repository),
+        Arc::clone(&tx_manager),
         Arc::clone(&clock),
     ));
     let booking_service = Arc::new(BookingService::new(
+        room_repository,
         booking_repository,
-        booking_unit_of_work,
+        tx_manager,
         clock,
         policy,
     ));

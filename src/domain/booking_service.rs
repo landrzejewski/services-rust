@@ -1,19 +1,3 @@
-//! Business operations on bookings – the core business logic of the service (step 013).
-//!
-//! Rules for creating a booking:
-//! 1. the room exists,
-//! 2. attendees fit into the room (`capacity`),
-//! 3. the booking starts in the future,
-//! 4. it is not longer than the policy allows,
-//! 5. it lies within the room's opening hours,
-//! 6. the user doesn't exceed the limit of active bookings,
-//! 7. it does not overlap another active booking of the same room.
-//!
-//! Rules for cancelling: only active bookings that haven't started yet (`Booking::cancel`).
-//!
-//! Step 016: creation runs in a transaction (`BookingUnitOfWork`) – locks + atomic
-//! check-then-insert; the database exclusion constraint is the final safety net.
-
 use std::sync::Arc;
 
 use uuid::Uuid;
@@ -24,30 +8,32 @@ use crate::domain::{
     clock::Clock,
     error::{DomainError, DomainResult},
     pagination::{Page, PageRequest},
-    repositories::{BookingRepository, BookingTransaction, BookingUnitOfWork},
+    repositories::{BookingRepository, RoomRepository},
     room::Room,
+    transaction::{Transaction, TxManager},
     validation::InvalidValue,
 };
 
 pub struct BookingService {
-    // Plain repository – reads and single-statement writes (list, get, cancel).
+    rooms: Arc<dyn RoomRepository>,
     bookings: Arc<dyn BookingRepository>,
-    // Transactional operations for the multi-step "create booking" use case (step 016).
-    unit_of_work: Arc<dyn BookingUnitOfWork>,
+    tx_manager: Arc<dyn TxManager>,
     clock: Arc<dyn Clock>,
     policy: BookingPolicy,
 }
 
 impl BookingService {
     pub fn new(
+        rooms: Arc<dyn RoomRepository>,
         bookings: Arc<dyn BookingRepository>,
-        unit_of_work: Arc<dyn BookingUnitOfWork>,
+        tx_manager: Arc<dyn TxManager>,
         clock: Arc<dyn Clock>,
         policy: BookingPolicy,
     ) -> Self {
         Self {
+            rooms,
             bookings,
-            unit_of_work,
+            tx_manager,
             clock,
             policy,
         }
@@ -55,14 +41,11 @@ impl BookingService {
 
     pub async fn create_booking(&self, new_booking: NewBooking) -> DomainResult<Booking> {
         // BEGIN. From now on every `?` that returns early drops `tx` -> ROLLBACK.
-        let mut tx = self.unit_of_work.begin().await?;
+        let mut tx = self.tx_manager.begin().await?;
 
-        // Lock the room row: concurrent bookings of the same room queue up here, so the
-        // overlap check below sees all committed bookings and nobody can insert in between.
-        // A missing *referenced* room is a problem of the input (field `roomId`), not of the URL –
-        // reported as invalid value (422), not "not found" (404).
-        let room = tx
-            .lock_room(new_booking.room_id)
+        let room = self
+            .rooms
+            .find_by_id_for_update(tx.as_mut(), new_booking.room_id)
             .await?
             .ok_or_else(|| InvalidValue::new("roomId", "room does not exist"))?;
 
@@ -71,11 +54,13 @@ impl BookingService {
 
         // The per-user limit spans rooms, so the room lock doesn't protect it – lock the user too.
         // Lock order is always room -> user (consistent ordering prevents deadlocks).
-        tx.lock_user(new_booking.user_id).await?;
+        self.bookings
+            .lock_user(tx.as_mut(), new_booking.user_id)
+            .await?;
         self.check_user_limit(tx.as_mut(), &new_booking).await?;
         self.check_no_overlap(tx.as_mut(), &new_booking).await?;
 
-        let booking = tx.insert_booking(new_booking).await?;
+        let booking = self.bookings.insert(tx.as_mut(), new_booking).await?;
         // COMMIT – releases the locks; only now other transactions see the new booking.
         tx.commit().await?;
         Ok(booking)
@@ -121,14 +106,15 @@ impl BookingService {
         Ok(())
     }
 
-    // `&mut dyn BookingTransaction` – the checks run inside the caller's transaction.
+    // `&mut dyn Transaction` – the checks run inside the caller's transaction.
     async fn check_user_limit(
         &self,
-        tx: &mut dyn BookingTransaction,
+        tx: &mut dyn Transaction,
         booking: &NewBooking,
     ) -> DomainResult<()> {
-        let active = tx
-            .count_active_by_user(booking.user_id, self.clock.now())
+        let active = self
+            .bookings
+            .count_active_by_user(tx, booking.user_id, self.clock.now())
             .await?;
         if active >= self.policy.max_active_bookings_per_user {
             return Err(DomainError::rule(
@@ -144,11 +130,12 @@ impl BookingService {
 
     async fn check_no_overlap(
         &self,
-        tx: &mut dyn BookingTransaction,
+        tx: &mut dyn Transaction,
         booking: &NewBooking,
     ) -> DomainResult<()> {
-        let overlapping = tx
-            .find_active_overlapping(booking.room_id, &booking.period)
+        let overlapping = self
+            .bookings
+            .find_active_overlapping(tx, booking.room_id, &booking.period)
             .await?;
         // Conflict (409), not a rule violation: the request is fine in itself, it collides
         // with existing state and may succeed for another time slot.
@@ -197,13 +184,12 @@ mod tests {
     use crate::{
         domain::{
             clock::FixedClock,
-            repositories::RoomRepository,
             room::{NewRoom, OpeningHours, RoomName},
             time_range::TimeRange,
         },
         // Tests reuse the in-memory adapters as lightweight fakes.
         infrastructure::memory::{
-            InMemoryBookingRepository, InMemoryBookingUnitOfWork, InMemoryRoomRepository,
+            InMemoryBookingRepository, InMemoryRoomRepository, InMemoryTxManager,
         },
     };
 
@@ -231,8 +217,9 @@ mod tests {
             .await
             .unwrap();
         let service = BookingService::new(
-            Arc::clone(&bookings) as Arc<dyn BookingRepository>,
-            Arc::new(InMemoryBookingUnitOfWork::new(rooms, bookings)),
+            rooms,
+            bookings,
+            Arc::new(InMemoryTxManager::new()),
             Arc::new(FixedClock(now())),
             BookingPolicy {
                 max_active_bookings_per_user: 2,
